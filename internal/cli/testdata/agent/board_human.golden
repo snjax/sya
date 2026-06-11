@@ -1,0 +1,68 @@
+code: 0
+stdout:
+bug
+  open:
+    b00001 Bug Fix
+  triage:
+    -
+  impl:
+    -
+  verify:
+    -
+  done:
+    -
+  scrapped:
+    -
+
+decision
+  proposed:
+    -
+  accepted:
+    -
+  superseded:
+    -
+  rejected:
+    -
+
+docs
+  todo:
+    -
+  writing:
+    -
+  done:
+    -
+
+epic
+  open:
+    e00001 Platform Epic
+  active:
+    -
+  done:
+    -
+  scrapped:
+    -
+
+feature
+  draft:
+    f00001 Feature API
+  spec:
+    -
+  impl:
+    -
+  review:
+    -
+  done:
+    -
+  scrapped:
+    -
+
+task
+  todo:
+    -
+  in_progress:
+    t00001 Worker Task (codex)
+  done:
+    -
+  scrapped:
+    -
+stderr:

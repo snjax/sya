@@ -79,7 +79,7 @@ func (a *App) runInit(prefix string) (InitResult, error) {
 		}
 		created = append(created, file.name)
 	}
-	if err := appendGitignoreWisps(root); err != nil {
+	if err := appendGitignoreRuntime(root); err != nil {
 		return InitResult{}, err
 	}
 	return InitResult{

@@ -30,7 +30,8 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 	}
 	typeDef := state.Schema.Types[t.Type]
 	if !stringIn(typeDef.Terminal, t.Status) {
-		return MutationResult{}, syaerr.Usage{Message: "task is not terminal"}
+		err := syaerr.Usage{Message: "task is not terminal"}
+		return a.transitionDenied(state, t, "reopen", err), err
 	}
 	if to == "" {
 		if len(typeDef.Pipeline) == 0 {
@@ -39,7 +40,8 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 		to = typeDef.Pipeline[0]
 	}
 	if stringIn(typeDef.Terminal, to) || !stringIn(typeDef.Pipeline, to) {
-		return MutationResult{}, syaerr.Usage{Message: "reopen target must be non-terminal status in pipeline"}
+		err := syaerr.Usage{Message: "reopen target must be non-terminal status in pipeline"}
+		return a.transitionDenied(state, t, to, err), err
 	}
 	from := t.Status
 	t.Status = to
@@ -47,5 +49,5 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return MutationResult{}, err
 	}
-	return MutationResult{ID: t.ID, File: t.File, From: from, To: to, Status: to, OK: true}, nil
+	return a.transitionOK(state, t, from, to, true), nil
 }

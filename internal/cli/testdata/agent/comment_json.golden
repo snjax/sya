@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"f00001","file":".sya/tasks/f00001-build-api.md","message":"Looks good\nship it"}}
+stderr:

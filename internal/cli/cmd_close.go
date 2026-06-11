@@ -73,17 +73,15 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 		}
 		if violations := checkTransition(state, t, transition); len(violations) > 0 {
 			err := transitionError(state, t, transition, violations)
-			payload := syaerr.Payload(err)
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+			return a.transitionDenied(state, t, transition.To, err)
 		}
 		from := t.Status
 		if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, true); err != nil {
 			payload := syaerr.Payload(err)
 			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
-		return MutationResult{ID: t.ID, File: t.File, From: from, To: target, Status: target, OK: true}
+		return a.transitionOK(state, t, from, target, true)
 	}
 	err = syaerr.TransitionNotAllowed{Task: t.ID, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
-	payload := syaerr.Payload(err)
-	return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+	return a.transitionDenied(state, t, "terminal", err)
 }

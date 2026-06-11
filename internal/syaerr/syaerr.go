@@ -28,6 +28,19 @@ func (e Usage) Error() string { return e.Message }
 func (e Usage) Type() string  { return "usage" }
 func (e Usage) ExitCode() int { return ExitUsage }
 
+type GitRequired struct {
+	Message string `json:"message"`
+}
+
+func (e GitRequired) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return "git repository required"
+}
+func (e GitRequired) Type() string  { return "git_required" }
+func (e GitRequired) ExitCode() int { return ExitUsage }
+
 type NotFound struct {
 	ID string `json:"id"`
 }
@@ -171,6 +184,7 @@ func Payload(err error) ErrorPayload {
 	var alreadyClaimed AlreadyClaimed
 	var schemaInvalid SchemaInvalid
 	var conflictMarkers ErrConflictMarkers
+	var gitRequired GitRequired
 	var usage Usage
 	switch {
 	case errors.As(err, &notFound):
@@ -195,6 +209,7 @@ func Payload(err error) ErrorPayload {
 		payload.Violations = schemaInvalid.Violations
 	case errors.As(err, &conflictMarkers):
 		payload.Path = conflictMarkers.Path
+	case errors.As(err, &gitRequired):
 	case errors.As(err, &usage):
 	}
 	return payload

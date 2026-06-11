@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"root":{"task":{"id":"e00001","type":"epic","title":"Root Epic","status":"open","priority":"normal","file":".sya/tasks/e00001-root-epic.md"},"closed":1,"total":4,"children":[{"task":{"id":"e00002","type":"epic","title":"Child Epic","status":"open","priority":"normal","parent":"e00001","file":".sya/tasks/e00002-child-epic.md"},"closed":1,"total":3,"children":[{"task":{"id":"e00003","type":"epic","title":"Grandchild Epic","status":"open","priority":"normal","parent":"e00002","file":".sya/tasks/e00003-grandchild-epic.md"},"closed":1,"total":2,"children":[{"task":{"id":"t00001","type":"task","title":"Leaf Task","status":"done","priority":"normal","parent":"e00003","file":".sya/tasks/t00001-leaf-task.md"},"closed":1,"total":1}]}]}]}}}
+stderr:

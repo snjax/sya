@@ -2,6 +2,7 @@ package index
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -162,6 +163,39 @@ func TestLoadGoldens(t *testing.T) {
 			idx := loadFixture(t, tt.files)
 			assertGolden(t, tt.name+".golden.json", snapshotIndex(idx))
 		})
+	}
+}
+
+func TestLoadIgnoresWispsDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTaskFile(t, root, "a.md", taskDoc(taskFields{
+		ID:       "a00001",
+		Type:     "task",
+		Title:    "Task",
+		Status:   "todo",
+		Priority: "normal",
+		Created:  "2026-01-01T09:00:00Z",
+	}))
+	wispPath := filepath.Join(root, ".sya", "wisps", "w-abc123-note.md")
+	if err := os.MkdirAll(filepath.Dir(wispPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wispPath, []byte("---\nid: w-abc123\ntitle: Note\ncreated: 2026-01-01T09:00:00Z\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := Load(os.DirFS(root), ".sya", testSchema())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := taskViewIDs(viewTasks(idx.All())); strings.Join(got, ",") != "a00001" {
+		t.Fatalf("tasks = %v, want only a00001", got)
+	}
+	var notFound syaerr.NotFound
+	if _, err := idx.Resolve("w-abc123"); !errors.As(err, &notFound) {
+		t.Fatalf("Resolve(wisp) error = %T %v, want NotFound", err, err)
 	}
 }
 

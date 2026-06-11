@@ -30,7 +30,8 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 	}
 	actor := a.Actor()
 	if t.Assignee != "" && t.Assignee != actor && !steal {
-		return MutationResult{}, syaerr.AlreadyClaimed{Task: t.ID, Assignee: t.Assignee}
+		err := syaerr.AlreadyClaimed{Task: t.ID, Assignee: t.Assignee}
+		return a.transitionDenied(state, t, "working", err), err
 	}
 	typeDef := state.Schema.Types[t.Type]
 	if len(typeDef.Working) == 0 {
@@ -50,12 +51,13 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		if err := moveTask(state, state.Project.Root, t, status.Transition, actor, a.now(), "", true); err != nil {
 			return MutationResult{}, err
 		}
-		return MutationResult{ID: t.ID, File: t.File, From: from, To: status.Transition.To, Status: status.Transition.To, OK: true}, nil
+		return a.transitionOK(state, t, from, status.Transition.To, true), nil
 	}
-	return MutationResult{}, syaerr.TransitionBlocked{
+	err = syaerr.TransitionBlocked{
 		Task:         t.ID,
 		Transition:   syaerr.TransitionRef{From: t.Status, To: "working"},
 		Violations:   []syaerr.Violation{{Kind: "claim", Message: "no reachable working transition with passing guards"}},
 		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t, ""),
 	}
+	return a.transitionDenied(state, t, "working", err), err
 }

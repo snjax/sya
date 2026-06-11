@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"e00001","closed":1,"total":4}}
+stderr:

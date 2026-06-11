@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"boards":{"task":{"done":[],"in_progress":[{"id":"t00001","type":"task","title":"Worker Task","status":"in_progress","priority":"normal","assignee":"codex","file":".sya/tasks/t00001-worker-task.md"}],"scrapped":[],"todo":[]}}}}
+stderr:

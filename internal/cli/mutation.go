@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snjax/sya/internal/events"
 	"github.com/snjax/sya/internal/index"
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/syaerr"
@@ -166,6 +167,47 @@ func transitionError(state *projectState, t *task.Task, transition schema.Transi
 	}
 }
 
+func (a *App) transitionDenied(state *projectState, t *task.Task, to string, err error) MutationResult {
+	payload := syaerr.Payload(err)
+	if to == "" {
+		to = payload.To
+	}
+	if to == "" && payload.Transition != nil {
+		to = payload.Transition.To
+	}
+	if state != nil && t != nil {
+		a.recordTransitionEvent(state, t.ID, t.Status, to, events.ResultDenied, syaerr.ErrorType(err), payload.Violations)
+	}
+	return MutationResult{ID: taskID(t), File: taskFile(t), OK: false, Error: &payload, Err: err}
+}
+
+func (a *App) transitionOK(state *projectState, t *task.Task, from, to string, write bool) MutationResult {
+	if write {
+		a.recordTransitionEvent(state, t.ID, from, to, events.ResultOK, "", nil)
+	}
+	return MutationResult{ID: t.ID, File: t.File, From: from, To: to, Status: to, OK: true}
+}
+
+func (a *App) recordTransitionEvent(state *projectState, taskID, from, to, result, errorType string, violations []syaerr.Violation) {
+	if state == nil {
+		return
+	}
+	event := events.Event{
+		TS:         a.now().UTC(),
+		Actor:      a.Actor(),
+		Task:       taskID,
+		From:       from,
+		To:         to,
+		Result:     result,
+		ErrorType:  errorType,
+		Violations: violations,
+	}
+	_ = events.Append(state.Project.Root, event)
+	if result == events.ResultDenied {
+		a.fireDeniedTransitionAlert(state.Project, event)
+	}
+}
+
 func moveTask(state *projectState, root string, t *task.Task, transition schema.Transition, actor string, now time.Time, reason string, write bool) error {
 	from := t.Status
 	t.Status = transition.To
@@ -322,6 +364,20 @@ func wouldCreateCycle(idx *index.Index, from, relation, to string) bool {
 		}
 	}
 	return false
+}
+
+func taskID(t *task.Task) string {
+	if t == nil {
+		return ""
+	}
+	return t.ID
+}
+
+func taskFile(t *task.Task) string {
+	if t == nil {
+		return ""
+	}
+	return t.File
 }
 
 func removeString(values []string, target string) []string {

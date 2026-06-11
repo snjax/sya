@@ -51,6 +51,7 @@ func Run(fsys fs.FS, projectDir string, sch *schema.Schema, idx *index.Index, op
 	runner.checkIndexWarnings()
 	runner.checkTasks()
 	runner.checkDAGs()
+	runner.checkRuntimeFiles(fsys, projectDir)
 	runner.sort()
 	return Report{Findings: runner.findings}, nil
 }
@@ -252,6 +253,33 @@ func (r *runner) checkRelationCycle(relation string) {
 			Message:  fmt.Sprintf("graph:dag relation %q has cycle: %s", relation, strings.Join(cycle, " -> ")),
 		})
 	}
+}
+
+func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
+	eventsPath := strings.Trim(projectDir, "/") + "/events.jsonl"
+	if _, err := fs.Stat(fsys, eventsPath); err != nil {
+		return
+	}
+	data, err := fs.ReadFile(fsys, ".gitignore")
+	if err == nil && gitignoreContains(data, ".sya/events.jsonl") {
+		return
+	}
+	r.add(Finding{
+		Kind:     "events_not_ignored",
+		Severity: SeverityWarning,
+		Path:     ".gitignore",
+		Message:  ".sya/events.jsonl should be ignored; run sya init in new projects or add .sya/events.jsonl to .gitignore",
+		Fixable:  false,
+	})
+}
+
+func gitignoreContains(data []byte, entry string) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == entry {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *runner) taskFinding(t *task.Task, kind, severity, message string, fixable bool) {

@@ -28,6 +28,13 @@ type configFile struct {
 	Project  string `yaml:"project"`
 	Prefix   string `yaml:"prefix"`
 	IDLength int    `yaml:"id_length"`
+	Archive  struct {
+		AfterDays int `yaml:"after_days"`
+	} `yaml:"archive"`
+	Alerts struct {
+		DeniedTransition string `yaml:"denied_transition"`
+		DoctorViolation  string `yaml:"doctor_violation"`
+	} `yaml:"alerts"`
 }
 
 func (a *App) loadProject() (*projectState, error) {
@@ -109,24 +116,38 @@ func atomicWriteFile(name string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmpName, name)
 }
 
-func appendGitignoreWisps(root string) error {
+func appendGitignoreRuntime(root string) error {
 	path := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	lines := bytes.Split(data, []byte("\n"))
-	for _, line := range lines {
-		if strings.TrimSpace(string(line)) == ".sya/wisps/" || strings.TrimSpace(string(line)) == ".sya/wisps" {
-			return nil
+	required := []string{".sya/events.jsonl", ".sya/wisps/"}
+	present := make(map[string]bool, len(required))
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		trimmed := strings.TrimSpace(string(line))
+		if trimmed == ".sya/wisps" {
+			trimmed = ".sya/wisps/"
 		}
+		present[trimmed] = true
+	}
+	var missing []string
+	for _, entry := range required {
+		if !present[entry] {
+			missing = append(missing, entry)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
 	}
 	var out []byte
 	out = append(out, data...)
 	if len(out) > 0 && !bytes.HasSuffix(out, []byte("\n")) {
 		out = append(out, '\n')
 	}
-	out = append(out, []byte(".sya/wisps/\n")...)
+	for _, entry := range missing {
+		out = append(out, []byte(entry+"\n")...)
+	}
 	return atomicWriteFile(path, out, 0o644)
 }
 

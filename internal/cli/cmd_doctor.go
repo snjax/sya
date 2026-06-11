@@ -123,5 +123,6 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 	if err != nil {
 		return DoctorResult{}, err
 	}
+	a.fireDoctorViolationAlerts(state.Project, report.Findings)
 	return DoctorResult{Findings: report.Findings, Changes: changes}, nil
 }

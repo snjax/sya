@@ -63,11 +63,17 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 			To:      status,
 			Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t),
 		}
+		if write {
+			return a.transitionDenied(state, t, status, err)
+		}
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	if violations := checkTransition(state, t, transition); len(violations) > 0 {
 		err := transitionError(state, t, transition, violations)
+		if write {
+			return a.transitionDenied(state, t, transition.To, err)
+		}
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
@@ -76,5 +82,5 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
-	return MutationResult{ID: t.ID, File: t.File, From: from, To: transition.To, Status: transition.To, OK: true}
+	return a.transitionOK(state, t, from, transition.To, write)
 }

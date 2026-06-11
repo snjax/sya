@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"results":[{"task":{"id":"a00001","type":"task","title":"API Gateway","status":"todo","priority":"normal","file":".sya/tasks/a00001-api-gateway.md"},"match":"title"},{"task":{"id":"d00001","type":"docs","title":"Docs API","status":"todo","priority":"normal","file":".sya/tasks/d00001-docs-api.md"},"match":"title"}]}}
+stderr:
