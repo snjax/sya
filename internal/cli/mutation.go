@@ -20,6 +20,7 @@ type MutationResult struct {
 	Status string               `json:"status,omitempty"`
 	OK     bool                 `json:"ok"`
 	Error  *syaerr.ErrorPayload `json:"error,omitempty"`
+	Err    error                `json:"-"`
 }
 
 type MutationResults struct {
@@ -90,7 +91,7 @@ func allowedOptions(sch *schema.Schema, resolver schema.Resolver, t *task.Task) 
 	return options
 }
 
-func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.Task) []syaerr.TransitionOption {
+func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.Task, excludeTo string) []syaerr.TransitionOption {
 	view, ok := resolver.Get(t.ID)
 	if !ok {
 		return nil
@@ -98,7 +99,7 @@ func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.T
 	statuses := schema.AvailableTransitions(sch, resolver, view)
 	options := make([]syaerr.TransitionOption, 0, len(statuses))
 	for _, status := range statuses {
-		if !status.Passing {
+		if !status.Passing || status.Transition.To == excludeTo {
 			continue
 		}
 		options = append(options, syaerr.TransitionOption{
@@ -115,19 +116,28 @@ func checkTransition(state *projectState, t *task.Task, transition schema.Transi
 	if !ok {
 		return nil
 	}
-	return convertViolations(schema.Evaluate(state.Schema, state.Index.Resolver(), view, transition))
+	return convertViolations(state, schema.Evaluate(state.Schema, state.Index.Resolver(), view, transition))
 }
 
-func convertViolations(violations []schema.Violation) []syaerr.Violation {
+func convertViolations(state *projectState, violations []schema.Violation) []syaerr.Violation {
 	out := make([]syaerr.Violation, 0, len(violations))
 	for _, violation := range violations {
 		offending := make([]syaerr.Candidate, 0, len(violation.Offending))
 		for _, ref := range violation.Offending {
-			offending = append(offending, syaerr.Candidate{
+			candidate := syaerr.Candidate{
 				ID:     ref.ID,
 				Type:   ref.Type,
 				Status: ref.Status,
-			})
+			}
+			if state != nil && state.Index != nil {
+				if t, err := state.Index.Resolve(ref.ID); err == nil {
+					candidate.Title = t.Title
+					candidate.Type = t.Type
+					candidate.Status = t.Status
+					candidate.File = t.File
+				}
+			}
+			offending = append(offending, candidate)
 		}
 		out = append(out, syaerr.Violation{
 			Kind:      violation.Kind,
@@ -152,7 +162,7 @@ func transitionError(state *projectState, t *task.Task, transition schema.Transi
 			Description: transition.Description,
 		},
 		Violations:   violations,
-		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t),
+		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t, transition.To),
 	}
 }
 

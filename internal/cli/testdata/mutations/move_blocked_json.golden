@@ -1,0 +1,4 @@
+code: 3
+stdout:
+{"ok":false,"error":{"type":"transition_blocked","message":"transition blocked","task":"f00001","transition":{"from":"spec","to":"impl","kind":"advance","description":"Спека утверждена — начинаем реализацию"},"violations":[{"kind":"field","field":"spec_approved","message":"Спека не утверждена (fields.spec_approved)","hint":"После ревью спеки: sya update \u003cid\u003e --field spec_approved=true"},{"kind":"section_nonempty","section":"Design","message":"Секция Design пуста","hint":"sya edit \u003cid\u003e --section Design"}],"alternatives":[{"to":"scrapped","kind":"setback"}]}}
+stderr:

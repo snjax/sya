@@ -23,6 +23,10 @@ test:
 func:
     go test ./tests/functional -count=1
 
+# run real-git integration CLI tests
+integ:
+    go test ./tests/integration -count=1
+
 # go vet + gofmt check
 lint:
     go vet ./...

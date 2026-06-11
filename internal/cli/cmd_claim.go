@@ -56,6 +56,6 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		Task:         t.ID,
 		Transition:   syaerr.TransitionRef{From: t.Status, To: "working"},
 		Violations:   []syaerr.Violation{{Kind: "claim", Message: "no reachable working transition with passing guards"}},
-		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t),
+		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t, ""),
 	}
 }

@@ -38,6 +38,9 @@ func (a *App) runClose(ids []string, explicitTo, reason string) (any, error) {
 		}
 	}
 	if hadError {
+		if len(results.Results) == 1 && results.Results[0].Err != nil {
+			return nil, results.Results[0].Err
+		}
 		return nil, partialError{data: results, code: syaerr.ExitTransitionRejected}
 	}
 	return results, nil
@@ -47,7 +50,7 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 	t, err := state.Index.Resolve(id)
 	if err != nil {
 		payload := syaerr.Payload(err)
-		return MutationResult{ID: id, OK: false, Error: &payload}
+		return MutationResult{ID: id, OK: false, Error: &payload, Err: err}
 	}
 	typeDef := state.Schema.Types[t.Type]
 	targets := typeDef.Terminal
@@ -55,7 +58,7 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 		if !stringIn(typeDef.Terminal, explicitTo) {
 			err := syaerr.Usage{Message: "close --to must be a terminal status"}
 			payload := syaerr.Payload(err)
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
 		targets = []string{explicitTo}
 	}
@@ -63,23 +66,24 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 		transition, ok, err := transitionForStatus(state.Schema, t, target)
 		if err != nil {
 			payload := syaerr.Payload(err)
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
 		if !ok {
 			continue
 		}
 		if violations := checkTransition(state, t, transition); len(violations) > 0 {
-			payload := syaerr.Payload(transitionError(state, t, transition, violations))
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+			err := transitionError(state, t, transition, violations)
+			payload := syaerr.Payload(err)
+			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
 		from := t.Status
 		if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, true); err != nil {
 			payload := syaerr.Payload(err)
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
 		return MutationResult{ID: t.ID, File: t.File, From: from, To: target, Status: target, OK: true}
 	}
 	err = syaerr.TransitionNotAllowed{Task: t.ID, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
 	payload := syaerr.Payload(err)
-	return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+	return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 }

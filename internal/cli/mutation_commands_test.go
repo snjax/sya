@@ -21,6 +21,19 @@ func TestMutationCommandGoldens(t *testing.T) {
 			createSeedTask(t, root, "a00001", "Move Me")
 			return runCLI(t, root, nil, nil, []string{"--json", "move", "a00001", "in_progress"})
 		}},
+		{name: "move_blocked_json", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+			mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+			return runCLI(t, root, nil, nil, []string{"--json", "move", "f00001", "impl"})
+		}},
+		{name: "move_offending_json", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "a00001", "Blocked")
+			createSeedTask(t, root, "b00001", "Dependency")
+			mustRun(t, root, nil, []string{"link", "a00001", "depends_on", "b00001"})
+			return runCLI(t, root, nil, nil, []string{"--json", "move", "a00001", "in_progress"})
+		}},
 		{name: "move_human", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
 			createSeedTask(t, root, "a00001", "Move Me")
@@ -144,13 +157,24 @@ func TestMutationErrorPaths(t *testing.T) {
 			name: "move guard violation partial",
 			setup: func(t *testing.T, root string) {
 				initProject(t, root)
+				createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+				mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+			},
+			args:     []string{"--json", "move", "f00001", "impl"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: "transition_blocked",
+		},
+		{
+			name: "move offending includes task detail",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
 				createSeedTask(t, root, "a00001", "Blocked")
 				createSeedTask(t, root, "b00001", "Dependency")
 				mustRun(t, root, nil, []string{"link", "a00001", "depends_on", "b00001"})
 			},
 			args:     []string{"--json", "move", "a00001", "in_progress"},
 			wantCode: syaerr.ExitTransitionRejected,
-			wantText: "transition_blocked",
+			wantText: `"title":"Dependency"`,
 		},
 		{
 			name: "ambiguous prefix",
@@ -160,7 +184,7 @@ func TestMutationErrorPaths(t *testing.T) {
 				createSeedTask(t, root, "abc222", "Two")
 			},
 			args:     []string{"move", "abc", "in_progress"},
-			wantCode: syaerr.ExitTransitionRejected,
+			wantCode: syaerr.ExitLookup,
 			wantText: "ambiguous prefix",
 		},
 		{
@@ -169,7 +193,7 @@ func TestMutationErrorPaths(t *testing.T) {
 				initProject(t, root)
 			},
 			args:     []string{"move", "missing", "in_progress"},
-			wantCode: syaerr.ExitTransitionRejected,
+			wantCode: syaerr.ExitLookup,
 			wantText: "not found",
 		},
 		{

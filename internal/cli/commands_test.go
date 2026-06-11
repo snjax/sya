@@ -26,6 +26,59 @@ func TestDefaultSchemaMatchesReference(t *testing.T) {
 	}
 }
 
+func TestSlugify(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		title string
+		want  string
+	}{
+		{title: "Стриминг", want: "striming"},
+		{title: "API Стриминг v2", want: "api-striming-v2"},
+		{title: "🚀✨", want: ""},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.title, func(t *testing.T) {
+			t.Parallel()
+			if got := slugify(tt.title); got != tt.want {
+				t.Fatalf("slugify(%q) = %q, want %q", tt.title, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateSlugFilenames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{name: "russian", title: "Стриминг", want: ".sya/tasks/r00001-striming.md"},
+		{name: "mixed", title: "API Стриминг v2", want: ".sya/tasks/m00001-api-striming-v2.md"},
+		{name: "emoji fallback", title: "🚀✨", want: ".sya/tasks/e00001.md"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			initProject(t, root)
+			id := strings.Split(tt.want, "/")[2]
+			id = strings.TrimSuffix(strings.Split(id, "-")[0], ".md")
+			stdout, stderr, code := runCLI(t, root, []string{id}, nil, []string{"--json", "create", tt.title})
+			if code != syaerr.ExitOK {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			if !strings.Contains(stdout, `"file":"`+tt.want+`"`) {
+				t.Fatalf("stdout=%q does not contain file %q", stdout, tt.want)
+			}
+		})
+	}
+}
+
 func TestCommandGoldens(t *testing.T) {
 	t.Parallel()
 

@@ -37,6 +37,9 @@ func (a *App) runMove(ids []string, status string, explain bool) (any, error) {
 		}
 	}
 	if hadError {
+		if len(results.Results) == 1 && results.Results[0].Err != nil {
+			return nil, results.Results[0].Err
+		}
 		return nil, partialError{data: results, code: syaerr.ExitTransitionRejected}
 	}
 	return results, nil
@@ -46,12 +49,12 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 	t, err := state.Index.Resolve(id)
 	if err != nil {
 		payload := syaerr.Payload(err)
-		return MutationResult{ID: id, OK: false, Error: &payload}
+		return MutationResult{ID: id, OK: false, Error: &payload, Err: err}
 	}
 	transition, ok, err := transitionForStatus(state.Schema, t, status)
 	if err != nil {
 		payload := syaerr.Payload(err)
-		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	if !ok {
 		err := syaerr.TransitionNotAllowed{
@@ -61,16 +64,17 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 			Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t),
 		}
 		payload := syaerr.Payload(err)
-		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	if violations := checkTransition(state, t, transition); len(violations) > 0 {
-		payload := syaerr.Payload(transitionError(state, t, transition, violations))
-		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+		err := transitionError(state, t, transition, violations)
+		payload := syaerr.Payload(err)
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	from := t.Status
 	if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, write); err != nil {
 		payload := syaerr.Payload(err)
-		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload}
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	return MutationResult{ID: t.ID, File: t.File, From: from, To: transition.To, Status: transition.To, OK: true}
 }

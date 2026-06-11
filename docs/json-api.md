@@ -27,6 +27,8 @@ Every JSON error response is an object with `ok: false` and an `error` object. T
 {"ok":false,"error":{"type":"usage","message":"missing task id"}}
 ```
 
+Single-id mutation commands such as `move`, `close`, and `claim` return this top-level error envelope when the operation fails. Multi-id mutation commands return `ok: true` with per-id `data.results` and exit 3 when at least one id fails, so callers can inspect successes and failures from the same request.
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -37,7 +39,7 @@ Every JSON error response is an object with `ok: false` and an `error` object. T
 | 3 | Transition rejected: whitelist, guard, or claim rejection |
 | 4 | Invalid schema or task file |
 
-Partial success in multi-id commands exits 3 and returns per-id results in `data`.
+Partial success in multi-id commands exits 3 and returns per-id results in `data.results`.
 
 ## Error Types
 
@@ -96,4 +98,3 @@ Exit code: 4. This is a schema/file validity error for unresolved merge conflict
 ```json
 {"ok":false,"error":{"type":"conflict_markers","message":".sya/tasks/a3f8c1-streaming-responses.md: conflict markers found","path":".sya/tasks/a3f8c1-streaming-responses.md"}}
 ```
-

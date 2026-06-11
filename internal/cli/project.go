@@ -122,6 +122,17 @@ func slugify(title string) string {
 	var b strings.Builder
 	lastHyphen := false
 	for _, r := range strings.ToLower(title) {
+		if repl, ok := cyrillicSlug[r]; ok {
+			if repl == "" {
+				continue
+			}
+			if b.Len()+len(repl) > 40 {
+				break
+			}
+			b.WriteString(repl)
+			lastHyphen = false
+			continue
+		}
 		switch {
 		case r > unicode.MaxASCII:
 			continue
@@ -139,10 +150,15 @@ func slugify(title string) string {
 		}
 	}
 	slug := strings.Trim(b.String(), "-")
-	if slug == "" {
-		return "task"
-	}
 	return slug
+}
+
+var cyrillicSlug = map[rune]string{
+	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
+	'ж': "zh", 'з': "z", 'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m",
+	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
+	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
+	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
 }
 
 func parseKeyValue(raw string) (string, string, error) {

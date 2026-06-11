@@ -117,7 +117,7 @@ func EditSection(t *Task, name string, content []byte) {
 }
 
 func parse(path string, data []byte) (*Task, error) {
-	if bytes.Contains(data, []byte("<<<<<<<")) {
+	if hasConflictMarkers(data) {
 		return nil, syaerr.ErrConflictMarkers{Path: path}
 	}
 
@@ -165,6 +165,23 @@ func parse(path string, data []byte) (*Task, error) {
 		t.Fields = make(map[string]any)
 	}
 	return t, nil
+}
+
+func hasConflictMarkers(data []byte) bool {
+	for len(data) > 0 {
+		line := data
+		if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+			line = data[:idx]
+			data = data[idx+1:]
+		} else {
+			data = nil
+		}
+		line = bytes.TrimSuffix(line, []byte("\r"))
+		if bytes.HasPrefix(line, []byte("<<<<<<<")) {
+			return true
+		}
+	}
+	return false
 }
 
 func unmarshalFrontmatter(data []byte, out *frontmatter) (err error) {

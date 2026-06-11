@@ -1,0 +1,4 @@
+code: 3
+stdout:
+{"ok":false,"error":{"type":"transition_blocked","message":"transition blocked","task":"a00001","transition":{"from":"todo","to":"in_progress","kind":"advance"},"violations":[{"kind":"blocking_relation","relation":"depends_on","message":"blocking relation \"depends_on\" has non-terminal targets","offending":[{"id":"b00001","title":"Dependency","type":"task","status":"todo","file":".sya/tasks/b00001-dependency.md"}]}]}}
+stderr:

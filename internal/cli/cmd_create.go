@@ -248,7 +248,11 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if err != nil {
 		return CreateResult{}, err
 	}
-	file := filepath.ToSlash(filepath.Join(".sya", "tasks", id+"-"+slugify(spec.Title)+".md"))
+	name := id
+	if slug := slugify(spec.Title); slug != "" {
+		name += "-" + slug
+	}
+	file := filepath.ToSlash(filepath.Join(".sya", "tasks", name+".md"))
 	created := a.now().UTC()
 	body := createBody(spec.Description, created, a.Actor())
 	t := &task.Task{
