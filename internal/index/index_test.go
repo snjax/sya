@@ -347,6 +347,8 @@ func TestReverseEdgesHaveCanonicalOrigins(t *testing.T) {
 
 func BenchmarkLoad5k(b *testing.B) {
 	root := b.TempDir()
+	writeIndexSchema(b, root, "schema: benchmark\n")
+	oldMTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for n := 0; n < 5000; n++ {
 		id := fmt.Sprintf("%06x", n+1)
 		fields := taskFields{
@@ -361,13 +363,22 @@ func BenchmarkLoad5k(b *testing.B) {
 			fields.Relations = map[string][]string{"depends_on": {fmt.Sprintf("%06x", n)}}
 		}
 		writeTaskFile(b, root, id+".md", taskDoc(fields))
+		taskPath := filepath.Join(root, ".sya", "tasks", id+".md")
+		if err := os.Chtimes(taskPath, oldMTime, oldMTime); err != nil {
+			b.Fatalf("chtimes: %v", err)
+		}
 	}
 	fsys := os.DirFS(root)
 	sch := testSchema()
+	cacheDir := b.TempDir()
+	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := LoadWithOptions(fsys, ".sya", sch, LoadOptions{CacheDir: cacheDir, Now: func() time.Time { return now }}); err != nil {
+		b.Fatalf("warm Load: %v", err)
+	}
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		idx, err := Load(fsys, ".sya", sch)
+		idx, err := LoadWithOptions(fsys, ".sya", sch, LoadOptions{CacheDir: cacheDir, Now: func() time.Time { return now.Add(time.Minute) }})
 		if err != nil {
 			b.Fatalf("Load: %v", err)
 		}

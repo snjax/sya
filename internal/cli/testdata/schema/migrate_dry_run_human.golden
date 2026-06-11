@@ -1,0 +1,6 @@
+code: 0
+stdout:
+would migrate a00001 scrapped->done .sya/tasks/a00001-archived-scrapped-task.md
+would migrate f00001 scrapped->done .sya/tasks/f00001-scrapped-feature.md
+would migrate s00001 scrapped->done .sya/tasks/s00001-scrapped-task.md
+stderr:

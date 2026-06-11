@@ -138,7 +138,7 @@ func (r *runner) checkSchemaVersion(t *task.Task) {
 	case t.SchemaVersion > r.schema.SchemaVersion:
 		r.taskFinding(t, "schema_version_future", SeverityError, fmt.Sprintf("task schema_version %d is newer than schema version %d", t.SchemaVersion, r.schema.SchemaVersion), false)
 	case t.SchemaVersion < r.schema.SchemaVersion:
-		r.taskFinding(t, "schema_version_drift", SeverityInfo, fmt.Sprintf("task schema_version %d is older than schema version %d", t.SchemaVersion, r.schema.SchemaVersion), false)
+		r.taskFinding(t, "schema_version_drift", SeverityInfo, fmt.Sprintf("task schema_version %d is older than schema version %d", t.SchemaVersion, r.schema.SchemaVersion), true)
 	}
 }
 

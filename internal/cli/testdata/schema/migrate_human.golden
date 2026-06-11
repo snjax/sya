@@ -1,0 +1,6 @@
+code: 0
+stdout:
+migrated a00001 scrapped->done .sya/tasks/a00001-archived-scrapped-task.md
+migrated f00001 scrapped->done .sya/tasks/f00001-scrapped-feature.md
+migrated s00001 scrapped->done .sya/tasks/s00001-scrapped-task.md
+stderr:

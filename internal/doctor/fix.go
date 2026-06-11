@@ -118,6 +118,29 @@ func ReassignIDInDir(projectDir string, idx *index.Index, oldID string) ([]Chang
 	return changes, nil
 }
 
+func FixSafe(projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	var changes []Change
+	symmetricChanges, err := FixSymmetricDup(projectDir, idx, sch)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, symmetricChanges...)
+
+	relationChanges, err := FixRelationLists(projectDir, idx)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, relationChanges...)
+
+	versionChanges, err := FixSchemaVersionDrift(projectDir, idx, sch, report)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, versionChanges...)
+	sortChanges(changes)
+	return changes, nil
+}
+
 func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([]Change, error) {
 	var changes []Change
 	for _, t := range idx.All() {
@@ -140,7 +163,11 @@ func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([
 				kept = append(kept, targetID)
 			}
 			sort.Strings(kept)
-			t.Relations[relation] = kept
+			if len(kept) == 0 {
+				delete(t.Relations, relation)
+			} else {
+				t.Relations[relation] = kept
+			}
 		}
 		if !changed {
 			continue
@@ -151,6 +178,78 @@ func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([
 		changes = append(changes, Change{Path: t.File, Action: "fix_symmetric_duplicate"})
 	}
 	return changes, nil
+}
+
+func FixRelationLists(projectDir string, idx *index.Index) ([]Change, error) {
+	var changes []Change
+	for _, t := range idx.All() {
+		changed := canonicalizeRelationLists(t)
+		if !changed {
+			continue
+		}
+		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+			return nil, err
+		}
+		changes = append(changes, Change{Path: t.File, Action: "sort_relations", Message: "sorted and deduplicated relation lists"})
+	}
+	return changes, nil
+}
+
+func FixSchemaVersionDrift(projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	if sch == nil {
+		return nil, nil
+	}
+	unsafe := unsafeTaskIDs(report)
+	var changes []Change
+	for _, t := range idx.All() {
+		if t.SchemaVersion >= sch.SchemaVersion || unsafe[t.ID] {
+			continue
+		}
+		from := fmt.Sprint(t.SchemaVersion)
+		t.SchemaVersion = sch.SchemaVersion
+		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+			return nil, err
+		}
+		changes = append(changes, Change{
+			Path:    t.File,
+			Action:  "bump_schema_version",
+			From:    from,
+			To:      fmt.Sprint(sch.SchemaVersion),
+			Message: "task was otherwise valid",
+		})
+	}
+	return changes, nil
+}
+
+func unsafeTaskIDs(report Report) map[string]bool {
+	unsafe := make(map[string]bool)
+	for _, finding := range report.Findings {
+		if finding.TaskID == "" || finding.Kind == "schema_version_drift" {
+			continue
+		}
+		unsafe[finding.TaskID] = true
+	}
+	return unsafe
+}
+
+func canonicalizeRelationLists(t *task.Task) bool {
+	if len(t.Relations) == 0 {
+		return false
+	}
+	changed := false
+	for relation, targets := range t.Relations {
+		kept := compactSorted(append([]string(nil), targets...))
+		if len(kept) == 0 {
+			delete(t.Relations, relation)
+			changed = true
+			continue
+		}
+		if !stringSlicesEqual(targets, kept) {
+			t.Relations[relation] = kept
+			changed = true
+		}
+	}
+	return changed
 }
 
 func splitConflictVersions(data []byte) ([]byte, []byte, error) {
@@ -307,4 +406,32 @@ func compactSorted(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortChanges(changes []Change) {
+	sort.SliceStable(changes, func(i, j int) bool {
+		left, right := changes[i], changes[j]
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.Action != right.Action {
+			return left.Action < right.Action
+		}
+		if left.From != right.From {
+			return left.From < right.From
+		}
+		return left.To < right.To
+	})
 }

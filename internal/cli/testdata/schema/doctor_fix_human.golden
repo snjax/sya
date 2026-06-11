@@ -1,0 +1,14 @@
+code: 4
+stdout:
+severity kind                       task     path                               message
+error    task_status_unknown        bad001   .sya/tasks/bad001-bad.md           status "ghost" is not in pipeline for type "task"
+info     schema_version_drift       bad001   .sya/tasks/bad001-bad.md           task schema_version 1 is older than schema version 2 [fixable]
+
+changes:
+  bump_schema_version .sya/tasks/a00001-a.md 1 -> 2 (task was otherwise valid)
+  sort_relations .sya/tasks/a00001-a.md (sorted and deduplicated relation lists)
+  bump_schema_version .sya/tasks/b00001-b.md 1 -> 2 (task was otherwise valid)
+  fix_symmetric_duplicate .sya/tasks/b00001-b.md
+  bump_schema_version .sya/tasks/c00001-c.md 1 -> 2 (task was otherwise valid)
+  bump_schema_version .sya/tasks/d00001-d.md 1 -> 2 (task was otherwise valid)
+stderr:

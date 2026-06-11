@@ -67,6 +67,10 @@ type Query struct {
 // Load parses all Markdown task files below dir/tasks in fsys. Invalid files are
 // quarantined so callers can still use the rest of the index.
 func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
+	return LoadWithOptions(fsys, dir, sch, LoadOptions{})
+}
+
+func LoadWithOptions(fsys fs.FS, dir string, sch *schema.Schema, opts LoadOptions) (*Index, error) {
 	if fsys == nil {
 		fsys = &emptyFS{}
 	}
@@ -75,7 +79,7 @@ func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
 	if dir == "" || dir == "." {
 		tasksDir = "tasks"
 	}
-	var taskFiles []string
+	var taskFiles []taskFileMeta
 
 	err := fs.WalkDir(fsys, tasksDir, func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -91,14 +95,22 @@ func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
 		if entry.IsDir() || path.Ext(filePath) != ".md" {
 			return nil
 		}
-		taskFiles = append(taskFiles, filePath)
+		info, err := entry.Info()
+		if err != nil {
+			idx.quarantine = append(idx.quarantine, QuarantinedFile{Path: filePath, Reason: err.Error()})
+			return nil
+		}
+		taskFiles = append(taskFiles, taskFileMeta{path: filePath, size: info.Size(), mtimeNS: statMtimeNS(info)})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(taskFiles)
-	for _, result := range loadTaskFilesParallel(fsys, taskFiles) {
+	sortMetas(taskFiles)
+
+	results := loadTaskFiles(fsys, strings.Trim(dir, "/"), taskFiles, opts)
+	for _, meta := range taskFiles {
+		result := results[meta.path]
 		if result.quarantine != nil {
 			idx.quarantine = append(idx.quarantine, *result.quarantine)
 			continue
@@ -109,6 +121,44 @@ func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
 	idx.rebuildOrder()
 	idx.buildReverseEdges()
 	return idx, nil
+}
+
+func loadTaskFiles(fsys fs.FS, dir string, metas []taskFileMeta, opts LoadOptions) map[string]taskFileResult {
+	results := make(map[string]taskFileResult, len(metas))
+	ctx, enabled := cacheEnabled(fsys, dir, opts)
+	var cache *indexCache
+	if enabled {
+		cache, _ = readCache(ctx)
+	}
+
+	parsePaths := make([]string, 0, len(metas))
+	for _, meta := range metas {
+		if cached, ok := reusableCachedTask(cache, meta); ok {
+			results[meta.path] = taskFileResult{path: meta.path, task: cached}
+			continue
+		}
+		parsePaths = append(parsePaths, meta.path)
+	}
+	for _, result := range loadTaskFilesParallel(fsys, parsePaths) {
+		results[result.path] = result
+	}
+	if enabled && shouldWriteCache(cache, metas, parsePaths) {
+		writeCache(ctx, metas, results)
+	}
+	return results
+}
+
+func shouldWriteCache(cache *indexCache, metas []taskFileMeta, parsePaths []string) bool {
+	if cache == nil || len(parsePaths) > 0 || len(cache.Entries) != len(metas) {
+		return true
+	}
+	for _, meta := range metas {
+		entry, ok := cache.Entries[meta.path]
+		if !ok || entry.Size != meta.size || entry.MtimeNS != meta.mtimeNS {
+			return true
+		}
+	}
+	return false
 }
 
 func newIndex(sch *schema.Schema) *Index {

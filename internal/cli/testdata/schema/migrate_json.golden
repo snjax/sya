@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"changes":[{"id":"a00001","type":"task","file":".sya/tasks/a00001-archived-scrapped-task.md","from":"scrapped","to":"done","status":"done"},{"id":"f00001","type":"feature","file":".sya/tasks/f00001-scrapped-feature.md","from":"scrapped","to":"done","status":"done"},{"id":"s00001","type":"task","file":".sya/tasks/s00001-scrapped-task.md","from":"scrapped","to":"done","status":"done"}]}}
+stderr:

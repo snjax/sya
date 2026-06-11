@@ -1,0 +1,43 @@
+{
+  "name": "sya",
+  "description": "Git-native issue tracker for AI-agent workflows. Manage tasks, schema-driven boards, memory, archive, restore, and wisps through the sya CLI.",
+  "version": "0.1.0",
+  "author": {
+    "name": "snjax"
+  },
+  "repository": "https://github.com/snjax/sya/",
+  "license": "MIT",
+  "homepage": "https://github.com/snjax/sya/",
+  "keywords": [
+    "issue-tracker",
+    "task-management",
+    "git-native",
+    "ai-workflow",
+    "agent-memory",
+    "kanban"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sya prime"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sya prime"
+          }
+        ]
+      }
+    ]
+  }
+}

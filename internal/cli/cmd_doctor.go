@@ -19,6 +19,7 @@ func init() {
 			return app.runDoctor(opts)
 		})
 		cmd.Flags().BoolVar(&opts.Strict, "strict", false, "enable strict checks")
+		cmd.Flags().BoolVar(&opts.Fix, "fix", false, "apply safe automatic repairs")
 		cmd.Flags().BoolVar(&opts.FixMerge, "fix-merge", false, "repair Log-only conflict markers")
 		cmd.Flags().StringVar(&opts.ReassignID, "reassign-id", "", "reassign duplicate task id")
 		return cmd
@@ -27,6 +28,7 @@ func init() {
 
 type doctorOptions struct {
 	Strict     bool
+	Fix        bool
 	FixMerge   bool
 	ReassignID string
 }
@@ -110,6 +112,21 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 	}
 	if opts.ReassignID != "" {
 		fixed, err := doctor.ReassignIDInDir(state.Project.Root, state.Index, opts.ReassignID)
+		if err != nil {
+			return DoctorResult{}, err
+		}
+		changes = append(changes, fixed...)
+		state, err = a.loadProject()
+		if err != nil {
+			return DoctorResult{}, err
+		}
+	}
+	if opts.Fix {
+		report, err := doctor.Run(os.DirFS(state.Project.Root), ".sya", state.Schema, state.Index, doctor.Options{Strict: opts.Strict})
+		if err != nil {
+			return DoctorResult{}, err
+		}
+		fixed, err := doctor.FixSafe(state.Project.Root, state.Index, state.Schema, report)
 		if err != nil {
 			return DoctorResult{}, err
 		}

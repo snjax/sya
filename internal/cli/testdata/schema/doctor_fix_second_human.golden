@@ -1,0 +1,6 @@
+code: 4
+stdout:
+severity kind                       task     path                               message
+error    task_status_unknown        bad001   .sya/tasks/bad001-bad.md           status "ghost" is not in pipeline for type "task"
+info     schema_version_drift       bad001   .sya/tasks/bad001-bad.md           task schema_version 1 is older than schema version 2 [fixable]
+stderr:

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/syaerr"
@@ -30,7 +31,7 @@ func (a *App) schemaCommand() *cobra.Command {
 	cmd.AddCommand(a.schemaShowCommand())
 	cmd.AddCommand(a.schemaGraphCommand())
 	cmd.AddCommand(a.schemaDocsCommand())
-	cmd.AddCommand(a.stub("migrate"))
+	cmd.AddCommand(a.schemaMigrateCommand())
 	return cmd
 }
 
@@ -64,6 +65,17 @@ func (a *App) schemaDocsCommand() *cobra.Command {
 	return cmd
 }
 
+func (a *App) schemaMigrateCommand() *cobra.Command {
+	var opts schemaMigrateOptions
+	cmd := a.command("migrate", "Migrate task files after schema changes", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
+		return a.runSchemaMigrate(opts)
+	})
+	cmd.Flags().StringVar(&opts.RenameStatus, "rename-status", "", "rename status old=new")
+	cmd.Flags().StringVar(&opts.Type, "type", "", "task type")
+	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "list affected tasks without writing")
+	return cmd
+}
+
 type SchemaValidateResult struct {
 	Valid      bool               `json:"valid"`
 	Violations []SchemaDiagnostic `json:"violations,omitempty"`
@@ -89,6 +101,26 @@ type SchemaGraphResult struct {
 type SchemaDocsResult struct {
 	Type     string `json:"type,omitempty"`
 	Markdown string `json:"markdown"`
+}
+
+type schemaMigrateOptions struct {
+	RenameStatus string
+	Type         string
+	DryRun       bool
+}
+
+type SchemaMigrateResult struct {
+	Changes []SchemaMigrateChange `json:"changes"`
+	DryRun  bool                  `json:"dry_run,omitempty"`
+}
+
+type SchemaMigrateChange struct {
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	File   string `json:"file"`
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Status string `json:"status"`
 }
 
 func (r SchemaValidateResult) HumanText(Colorizer) string {
@@ -123,6 +155,24 @@ func (r SchemaGraphResult) HumanText(Colorizer) string {
 
 func (r SchemaDocsResult) HumanText(Colorizer) string {
 	return r.Markdown
+}
+
+func (r SchemaMigrateResult) HumanText(Colorizer) string {
+	if len(r.Changes) == 0 {
+		if r.DryRun {
+			return "no matching tasks"
+		}
+		return "schema migrate: no changes"
+	}
+	verb := "migrated"
+	if r.DryRun {
+		verb = "would migrate"
+	}
+	lines := make([]string, 0, len(r.Changes))
+	for _, change := range r.Changes {
+		lines = append(lines, fmt.Sprintf("%s %s %s->%s %s", verb, change.ID, change.From, change.To, change.File))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) runSchemaValidate() (SchemaValidateResult, error) {
@@ -175,6 +225,76 @@ func (a *App) runSchemaDocs(typeName string) (SchemaDocsResult, error) {
 		return SchemaDocsResult{}, err
 	}
 	return SchemaDocsResult{Type: typeName, Markdown: markdown}, nil
+}
+
+func (a *App) runSchemaMigrate(opts schemaMigrateOptions) (SchemaMigrateResult, error) {
+	if strings.TrimSpace(opts.RenameStatus) == "" {
+		return SchemaMigrateResult{}, syaerr.Usage{Message: "schema migrate requires --rename-status old=new"}
+	}
+	oldStatus, newStatus, err := parseRenameStatus(opts.RenameStatus)
+	if err != nil {
+		return SchemaMigrateResult{}, err
+	}
+	state, err := a.loadProject()
+	if err != nil {
+		return SchemaMigrateResult{}, err
+	}
+	if opts.Type != "" {
+		typeDef, ok := state.Schema.Types[opts.Type]
+		if !ok {
+			return SchemaMigrateResult{}, syaerr.Usage{Message: "unknown task type: " + opts.Type}
+		}
+		if !stringIn(typeDef.Pipeline, newStatus) {
+			return SchemaMigrateResult{}, syaerr.Usage{Message: "new status is not in pipeline for type " + opts.Type + ": " + newStatus}
+		}
+	}
+	var changes []SchemaMigrateChange
+	for _, t := range state.Index.All() {
+		if opts.Type != "" && t.Type != opts.Type {
+			continue
+		}
+		if t.Status != oldStatus {
+			continue
+		}
+		typeDef, ok := state.Schema.Types[t.Type]
+		if !ok {
+			return SchemaMigrateResult{}, syaerr.SchemaInvalid{Message: "unknown task type: " + t.Type}
+		}
+		if !stringIn(typeDef.Pipeline, newStatus) {
+			return SchemaMigrateResult{}, syaerr.Usage{Message: "new status is not in pipeline for type " + t.Type + ": " + newStatus}
+		}
+		changes = append(changes, SchemaMigrateChange{
+			ID:     t.ID,
+			Type:   t.Type,
+			File:   t.File,
+			From:   oldStatus,
+			To:     newStatus,
+			Status: newStatus,
+		})
+		if opts.DryRun {
+			continue
+		}
+		t.Status = newStatus
+		t.SchemaVersion = state.Schema.SchemaVersion
+		appendLogLine(t, fmt.Sprintf("- %s @%s: migrated: status %s->%s", a.now().UTC().Format(time.RFC3339), a.Actor(), oldStatus, newStatus))
+		if err := writeTask(state.Project.Root, t); err != nil {
+			return SchemaMigrateResult{}, err
+		}
+	}
+	return SchemaMigrateResult{Changes: changes, DryRun: opts.DryRun}, nil
+}
+
+func parseRenameStatus(raw string) (string, string, error) {
+	left, right, ok := strings.Cut(raw, "=")
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if !ok || left == "" || right == "" {
+		return "", "", syaerr.Usage{Message: "expected --rename-status old=new"}
+	}
+	if left == right {
+		return "", "", syaerr.Usage{Message: "old and new status must differ"}
+	}
+	return left, right, nil
 }
 
 func (a *App) loadProjectSchema() (*schema.Schema, error) {

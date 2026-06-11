@@ -1,0 +1,12 @@
+{
+  "name": "sya",
+  "owner": "snjax",
+  "plugins": [
+    {
+      "name": "sya",
+      "source": "./claude-plugin",
+      "description": "Git-native issue tracker for AI-agent workflows.",
+      "version": "0.1.0"
+    }
+  ]
+}
