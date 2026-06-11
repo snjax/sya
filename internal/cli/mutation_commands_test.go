@@ -69,6 +69,16 @@ func TestMutationCommandGoldens(t *testing.T) {
 			createSeedTask(t, root, "c00001", "Claim Me")
 			return runCLI(t, root, nil, nil, []string{"--actor", "codex", "claim", "c00001"})
 		}},
+		{name: "claim_not_reachable_json", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "f00001", "Draft Feature", "-t", "feature")
+			return runCLI(t, root, nil, nil, []string{"--json", "--actor", "codex", "claim", "f00001"})
+		}},
+		{name: "claim_not_reachable_human", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "f00001", "Draft Feature", "-t", "feature")
+			return runCLI(t, root, nil, nil, []string{"--actor", "codex", "claim", "f00001"})
+		}},
 		{name: "close_json", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
 			createSeedTask(t, root, "d00001", "Close Me")
@@ -226,6 +236,16 @@ func TestMutationErrorPaths(t *testing.T) {
 			args:     []string{"--json", "--actor", "bob", "claim", "c00001"},
 			wantCode: syaerr.ExitTransitionRejected,
 			wantText: "already_claimed",
+		},
+		{
+			name: "claim feature draft not reachable",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "f00001", "Draft Feature", "-t", "feature")
+			},
+			args:     []string{"claim", "f00001"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: "cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move f00001 spec",
 		},
 		{
 			name: "undeclared field",

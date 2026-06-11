@@ -60,6 +60,17 @@ func TestErrorEnvelopeGoldens(t *testing.T) {
 				{To: "scrapped", Kind: "setback", Description: "Task was cancelled with rationale in Log"},
 			},
 		},
+		"claim_not_reachable": ClaimNotReachable{
+			Task:     "a3f8c1",
+			TaskType: "feature",
+			Working:  []string{"impl", "review"},
+			From:     "draft",
+			NextAdvance: &TransitionOption{
+				To:          "spec",
+				Kind:        "advance",
+				Description: "Requirements are ready for specification",
+			},
+		},
 		"schema_invalid": SchemaInvalid{
 			Message: "schema validation failed",
 			Violations: []Violation{

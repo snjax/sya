@@ -127,6 +127,11 @@ func TestFunctionalGoldens(t *testing.T) {
 			mustWrite(t, filepath.Join(root, ".sya", "schema.yml"), []byte("schema_version: [\n"))
 			return runSya(t, root, nil, "--json", "list")
 		}},
+		{"claim_feature_draft", func(t *testing.T, root string) runResult {
+			mustOK(t, runSya(t, root, nil, "init"))
+			id := createJSON(t, root, "Draft Feature", "-t", "feature")
+			return runSya(t, root, nil, "claim", id)
+		}},
 	}
 
 	for _, tt := range tests {

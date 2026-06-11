@@ -44,8 +44,15 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		return MutationResult{}, syaerr.NotFound{ID: t.ID}
 	}
 	statuses := schema.AvailableTransitions(state.Schema, state.Index.Resolver(), view)
+	var blockedWorking *schema.TransitionStatus
 	for _, status := range statuses {
-		if !stringIn(typeDef.Working, status.Transition.To) || !status.Passing {
+		if !stringIn(typeDef.Working, status.Transition.To) {
+			continue
+		}
+		if !status.Passing {
+			if blockedWorking == nil {
+				blockedWorking = &status
+			}
 			continue
 		}
 		from := t.Status
@@ -55,11 +62,30 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		}
 		return a.transitionOK(state, t, from, status.Transition.To, true), nil
 	}
-	err = syaerr.TransitionBlocked{
-		Task:         t.ID,
-		Transition:   syaerr.TransitionRef{From: t.Status, To: "working"},
-		Violations:   []syaerr.Violation{{Kind: "claim", Message: "no reachable working transition with passing guards"}},
-		Alternatives: passingAlternatives(state.Schema, state.Index.Resolver(), t, ""),
+	if blockedWorking != nil {
+		err := transitionError(state, t, blockedWorking.Transition, convertViolations(state, blockedWorking.Violations))
+		return a.transitionDenied(state, t, blockedWorking.Transition.To, err), err
+	}
+	err = syaerr.ClaimNotReachable{
+		Task:        t.ID,
+		TaskType:    t.Type,
+		Working:     append([]string(nil), typeDef.Working...),
+		From:        t.Status,
+		NextAdvance: nextPassingAdvance(statuses),
 	}
 	return a.transitionDenied(state, t, "working", err), err
+}
+
+func nextPassingAdvance(statuses []schema.TransitionStatus) *syaerr.TransitionOption {
+	for _, status := range statuses {
+		if !status.Passing || status.Transition.Kind != schema.TransitionAdvance {
+			continue
+		}
+		return &syaerr.TransitionOption{
+			To:          status.Transition.To,
+			Kind:        string(status.Transition.Kind),
+			Description: status.Transition.Description,
+		}
+	}
+	return nil
 }

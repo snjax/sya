@@ -1,0 +1,1 @@
+{"ok":false,"error":{"type":"claim_not_reachable","message":"cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move a3f8c1 spec","task":"a3f8c1","task_type":"feature","from":"draft","working":["impl","review"],"next_advance":{"to":"spec","kind":"advance","description":"Requirements are ready for specification"}}}

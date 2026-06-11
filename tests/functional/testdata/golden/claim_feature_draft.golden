@@ -1,0 +1,4 @@
+code: 3
+stdout:
+stderr:
+error: cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move <id> spec

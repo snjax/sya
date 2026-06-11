@@ -83,6 +83,14 @@ Exit code: 3. The transition is whitelisted, but one or more guards failed. `vio
 {"ok":false,"error":{"type":"transition_blocked","message":"transition blocked","task":"a3f8c1","transition":{"from":"spec","to":"impl","kind":"advance","description":"Specification approved; start implementation"},"violations":[{"kind":"field","field":"spec_approved","message":"Spec is not approved (fields.spec_approved)","hint":"After spec review: sya update a3f8c1 --field spec_approved=true"},{"kind":"blocking_relation","relation":"depends_on","message":"Dependencies are not closed","offending":[{"id":"b771d2","title":"Transport spike","type":"task","status":"impl","file":".sya/tasks/b771d2-transport-spike.md"}]}],"alternatives":[{"to":"scrapped","kind":"setback","description":"Task was cancelled with rationale in Log"}]}}
 ```
 
+### claim_not_reachable
+
+Exit code: 3. `claim` uses this when the task type has working statuses, but the current status has no direct whitelist transition into any working status. `working` lists the claim targets for the type, and `next_advance` is the first currently passable advance transition from the current status, or `null` if none exists.
+
+```json
+{"ok":false,"error":{"type":"claim_not_reachable","message":"cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move a3f8c1 spec","task":"a3f8c1","task_type":"feature","from":"draft","working":["impl","review"],"next_advance":{"to":"spec","kind":"advance","description":"Requirements are ready for specification"}}}
+```
+
 ### schema_invalid
 
 Exit code: 4. `violations` contains schema or task-file validation findings.

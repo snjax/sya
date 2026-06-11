@@ -117,6 +117,28 @@ func (e AlreadyClaimed) Error() string { return fmt.Sprintf("already claimed by 
 func (e AlreadyClaimed) Type() string  { return "already_claimed" }
 func (e AlreadyClaimed) ExitCode() int { return ExitTransitionRejected }
 
+type ClaimNotReachable struct {
+	Task        string            `json:"task"`
+	TaskType    string            `json:"task_type,omitempty"`
+	Working     []string          `json:"working"`
+	From        string            `json:"from"`
+	NextAdvance *TransitionOption `json:"next_advance"`
+}
+
+func (e ClaimNotReachable) Error() string {
+	taskType := e.TaskType
+	if taskType == "" {
+		taskType = "task"
+	}
+	message := fmt.Sprintf("cannot claim: working statuses for %s are %s; no transition from %s", taskType, strings.Join(e.Working, ", "), e.From)
+	if e.NextAdvance != nil && e.NextAdvance.To != "" {
+		message += fmt.Sprintf("; advance first: sya move %s %s", e.Task, e.NextAdvance.To)
+	}
+	return message
+}
+func (e ClaimNotReachable) Type() string  { return "claim_not_reachable" }
+func (e ClaimNotReachable) ExitCode() int { return ExitTransitionRejected }
+
 type SchemaInvalid struct {
 	Message    string      `json:"message"`
 	Violations []Violation `json:"violations,omitempty"`
@@ -212,6 +234,7 @@ func Payload(err error) ErrorPayload {
 	var notAllowed TransitionNotAllowed
 	var blocked TransitionBlocked
 	var alreadyClaimed AlreadyClaimed
+	var claimNotReachable ClaimNotReachable
 	var schemaInvalid SchemaInvalid
 	var conflictMarkers ErrConflictMarkers
 	var gitRequired GitRequired
@@ -237,6 +260,12 @@ func Payload(err error) ErrorPayload {
 	case errors.As(err, &alreadyClaimed):
 		payload.Task = alreadyClaimed.Task
 		payload.Assignee = alreadyClaimed.Assignee
+	case errors.As(err, &claimNotReachable):
+		payload.Task = claimNotReachable.Task
+		payload.TaskType = claimNotReachable.TaskType
+		payload.Working = claimNotReachable.Working
+		payload.From = claimNotReachable.From
+		payload.NextAdvance = claimNotReachable.NextAdvance
 	case errors.As(err, &schemaInvalid):
 		payload.Violations = schemaInvalid.Violations
 	case errors.As(err, &conflictMarkers):
@@ -279,6 +308,8 @@ func ErrorMessage(err error) string {
 		return e.Error()
 	case AlreadyClaimed:
 		return e.Error()
+	case ClaimNotReachable:
+		return e.Error()
 	case SchemaInvalid:
 		return e.Error()
 	case Usage:
@@ -304,6 +335,8 @@ type ErrorPayload struct {
 	Violations   []Violation        `json:"violations,omitempty"`
 	Alternatives []TransitionOption `json:"alternatives,omitempty"`
 	Allowed      []TransitionOption `json:"allowed,omitempty"`
+	Working      []string           `json:"working,omitempty"`
+	NextAdvance  *TransitionOption  `json:"next_advance,omitempty"`
 }
 
 func formatTransitionOptions(options []TransitionOption) string {
