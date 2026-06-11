@@ -130,7 +130,11 @@ func TestParseTable(t *testing.T) {
 				"type: task\n" +
 				"status: todo\n" +
 				"---\n" +
-				"<<<<<<< HEAD\n"),
+				"<<<<<<< HEAD\n" +
+				"ours\n" +
+				"=======\n" +
+				"theirs\n" +
+				">>>>>>> branch\n"),
 			wantErr: syaerr.ErrConflictMarkers{},
 		},
 	}
@@ -211,7 +215,9 @@ func TestAppendLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	AppendLog(parsed, "codex", "implemented")
+	if err := AppendLog(parsed, "codex", "implemented"); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := parsed.Body.Sections[len(parsed.Body.Sections)-1].Name; got != "Log" {
 		t.Fatalf("last section = %q, want Log", got)
@@ -229,14 +235,79 @@ func TestEditSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	EditSection(parsed, "Description", []byte("new\n"))
-	EditSection(parsed, "Acceptance", []byte("- [ ] done\n"))
+	if err := EditSection(parsed, "Description", []byte("new\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := EditSection(parsed, "Acceptance", []byte("- [ ] done\n")); err != nil {
+		t.Fatal(err)
+	}
 
 	if !bytes.Contains(parsed.Body.Raw, []byte("## Description\nnew\n## Notes\nkeep\n")) {
 		t.Fatalf("Description was not replaced correctly:\n%s", parsed.Body.Raw)
 	}
 	if !bytes.HasSuffix(parsed.Body.Raw, []byte("## Acceptance\n- [ ] done\n")) {
 		t.Fatalf("Acceptance was not appended last:\n%s", parsed.Body.Raw)
+	}
+}
+
+func TestEditSectionRejectsInvalidNames(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := ParseBytes([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\n---\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"", "Line\nBreak", "# Heading", "<<<<<<<", "=======", ">>>>>>>"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := EditSection(parsed, name, []byte("content\n"))
+			var usage syaerr.Usage
+			if !errors.As(err, &usage) {
+				t.Fatalf("EditSection(%q) error = %T %v, want Usage", name, err, err)
+			}
+		})
+	}
+}
+
+func TestEditSectionEscapesContentBoundaries(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := ParseBytes([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\n---\n## Description\nold\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("before\n## Not A Section\n<<<<<<< HEAD\n=======\n>>>>>>> branch\nafter\n")
+	if err := EditSection(parsed, "Description", content); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(parsed.Body.Raw, []byte("\\## Not A Section\n\\<<<<<<< HEAD\n\\=======\n\\>>>>>>> branch\n")) {
+		t.Fatalf("content was not escaped:\n%s", parsed.Body.Raw)
+	}
+	roundTrip, err := ParseBytes(mustSerializeForTest(t, parsed))
+	if err != nil {
+		t.Fatalf("ParseBytes after escaped edit: %v\n%s", err, parsed.Body.Raw)
+	}
+	if got := len(roundTrip.Body.Sections); got != 1 {
+		t.Fatalf("section count = %d, want 1\n%s", got, roundTrip.Body.Raw)
+	}
+}
+
+func TestAppendLogEscapesInjectedLines(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := ParseBytes([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\n---\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendLog(parsed, "agent\n## Injected", "<<<<<<< HEAD\n=======\n>>>>>>> branch"); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(parsed.Body.Raw, []byte("\\## Injected")) || !bytes.Contains(parsed.Body.Raw, []byte("\\=======")) || !bytes.Contains(parsed.Body.Raw, []byte("\\>>>>>>> branch")) {
+		t.Fatalf("log content was not escaped:\n%s", parsed.Body.Raw)
+	}
+	if _, err := ParseBytes(mustSerializeForTest(t, parsed)); err != nil {
+		t.Fatalf("ParseBytes after escaped log: %v\n%s", err, parsed.Body.Raw)
 	}
 }
 
@@ -333,6 +404,15 @@ func assertErrorAs(t *testing.T, err error, target any) {
 	default:
 		t.Fatalf("unsupported target %T", target)
 	}
+}
+
+func mustSerializeForTest(t *testing.T, task *Task) []byte {
+	t.Helper()
+	data, err := Serialize(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func assertFrontmatterEqual(t *testing.T, got, want *Task) {

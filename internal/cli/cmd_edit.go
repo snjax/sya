@@ -41,7 +41,9 @@ func (a *App) runEdit(id, section, file string) (MutationResult, error) {
 	if err != nil {
 		return MutationResult{}, err
 	}
-	task.EditSection(t, section, data)
+	if err := task.EditSection(t, section, data); err != nil {
+		return MutationResult{}, err
+	}
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return MutationResult{}, err
 	}

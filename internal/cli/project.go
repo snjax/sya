@@ -50,6 +50,18 @@ func (a *App) loadProject() (*projectState, error) {
 	return &projectState{Project: project, Schema: sch, Index: idx}, nil
 }
 
+func loadConfig(project Project) (configFile, error) {
+	var cfg configFile
+	data, err := os.ReadFile(filepath.Join(project.SyaDir, "config.yml"))
+	if err != nil {
+		return cfg, err
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
 func (a *App) existingIDs(idx *index.Index) map[string]struct{} {
 	existing := make(map[string]struct{})
 	for _, t := range idx.All() {

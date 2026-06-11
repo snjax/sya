@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"name":"streaming-api-uses-sse"}}
+stderr:

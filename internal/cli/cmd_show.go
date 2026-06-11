@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/snjax/sya/internal/index"
+	"github.com/snjax/sya/internal/memory"
 	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +25,7 @@ type ShowResult struct {
 	Task       TaskCard                `json:"task"`
 	Relations  map[string][]string     `json:"relations,omitempty"`
 	Sections   []SectionCard           `json:"sections,omitempty"`
+	Memory     []MemorySummary         `json:"memory,omitempty"`
 	Quarantine []index.QuarantinedFile `json:"quarantine,omitempty"`
 }
 
@@ -69,6 +72,12 @@ func (r ShowResult) HumanText(Colorizer) string {
 		}
 		fmt.Fprintf(&b, "\n## %s\n%s\n", section.Name, section.Text)
 	}
+	if len(r.Memory) > 0 {
+		b.WriteString("\n## Memory\n")
+		for _, note := range r.Memory {
+			fmt.Fprintf(&b, "- %s: %s\n", note.Name, note.Description)
+		}
+	}
 	if len(r.Quarantine) > 0 {
 		fmt.Fprintf(&b, "\nwarning: %d quarantined task file(s)\n", len(r.Quarantine))
 	}
@@ -84,11 +93,16 @@ func (a *App) runShow(id string) (ShowResult, error) {
 	if err != nil {
 		return ShowResult{}, err
 	}
+	notes, err := memory.List(os.DirFS(state.Project.Root), ".sya/memory")
+	if err != nil {
+		return ShowResult{}, err
+	}
 	relations := relationView(t, state.Index.ReverseEdges()[t.ID])
 	return ShowResult{
 		Task:       taskCard(t),
 		Relations:  relations,
 		Sections:   sectionCards(t.Body.Sections),
+		Memory:     memoryForTask(notes, t.ID),
 		Quarantine: state.Index.Quarantined(),
 	}, nil
 }
@@ -133,4 +147,18 @@ func sectionCards(sections []task.Section) []SectionCard {
 		cards = append(cards, SectionCard{Name: section.Name, Text: sectionText(section)})
 	}
 	return cards
+}
+
+func memoryForTask(notes []memory.Note, id string) []MemorySummary {
+	out := make([]MemorySummary, 0)
+	for _, note := range notes {
+		if !stringIn(note.Tasks, id) {
+			continue
+		}
+		out = append(out, memorySummary(note))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
+	return out
 }

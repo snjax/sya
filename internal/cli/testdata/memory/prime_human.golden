@@ -1,0 +1,32 @@
+code: 0
+stdout:
+project: fixture (sya)
+
+schema:
+- bug | open -> triage -> impl* -> verify* -> done! -> scrapped!
+- decision | proposed -> accepted -> superseded! -> rejected!
+- docs | todo -> writing* -> done!
+- epic | open -> active* -> done! -> scrapped!
+- feature: Пользовательская функциональность: через спеку и ревью, impl не начинается без утверждённой спеки | draft -> spec -> impl* -> review* -> done! -> scrapped!
+- task | todo -> in_progress* -> done! -> scrapped!
+
+relations:
+- affects | reverse affected_by
+- depends_on | reverse blocks | dag | blocking: Зависимость по работе: цель должна быть закрыта раньше начала/закрытия источника
+- discovered_from | reverse discovered | dag
+- duplicates | reverse duplicated_by
+- relates | symmetric
+- superseded_by | reverse supersedes
+
+ready:
+- f00001 [feature/draft/high] Build API
+- d00001 [task/in_progress/normal] Dependency Task
+- e00001 [epic/open/normal] Platform Epic
+
+in-progress:
+- d00001 [task/in_progress] @codex Dependency Task
+
+memory:
+- deploy-process: Deploys require green doctor
+- streaming-api-uses-sse: Streaming API uses SSE
+stderr:

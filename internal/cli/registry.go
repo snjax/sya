@@ -21,9 +21,6 @@ func registerCommands(app *App, root *cobra.Command) {
 	root.AddCommand(app.stub("restore"))
 	root.AddCommand(app.stub("search"))
 	root.AddCommand(app.stub("events"))
-	root.AddCommand(app.stub("remember"))
-	root.AddCommand(app.stub("recall"))
-	root.AddCommand(app.stub("forget"))
 	root.AddCommand(app.wispCommand())
 }
 

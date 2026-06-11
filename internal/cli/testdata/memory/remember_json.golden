@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"note":{"name":"striming-api-uses-sse","description":"Стриминг API uses SSE","tasks":["f00001"],"file":".sya/memory/striming-api-uses-sse.md"},"warnings":[{"task":"missing","message":"task not found: missing"}]}}
+stderr:

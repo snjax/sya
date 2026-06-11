@@ -1,0 +1,5 @@
+code: 0
+stdout:
+deploy-process: Deploys require green doctor
+streaming-api-uses-sse: Streaming API uses SSE
+stderr:

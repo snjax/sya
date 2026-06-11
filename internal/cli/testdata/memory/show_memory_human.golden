@@ -1,0 +1,18 @@
+code: 0
+stdout:
+f00001 [draft] Build API
+type: feature
+priority: high
+parent: e00001
+relations:
+  depends_on: d00001
+
+## Description
+Feature description
+
+## Log
+- 2026-01-02T03:04:05Z @unknown: created
+
+## Memory
+- streaming-api-uses-sse: Streaming API uses SSE
+stderr:

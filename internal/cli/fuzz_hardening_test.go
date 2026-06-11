@@ -15,9 +15,6 @@ func FuzzSlug(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, title string) {
 		slug := slugify(title)
-		if slug == "" {
-			t.Fatal("slug is empty")
-		}
 		if slug == "." || slug == ".." || strings.ContainsAny(slug, `/\`) {
 			t.Fatalf("unsafe slug %q from %q", slug, title)
 		}

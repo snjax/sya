@@ -1,9 +1,12 @@
 package task
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/snjax/sya/internal/syaerr"
 )
 
 func FuzzEditSection(f *testing.F) {
@@ -15,12 +18,24 @@ func FuzzEditSection(f *testing.F) {
 		{"Design", "## injected\nbody\n"},
 		{"Unicode-雪", "emoji \U0001f9ea and nul \x00\n"},
 		{"Line\nBreak", "content"},
+		{"<<<<<<<", "0"},
+		{"", "empty name"},
+		{"# Heading", "leading hash"},
+		{"=======", "separator"},
+		{">>>>>>>", "end"},
+		{"Notes", "<<<<<<< HEAD\n=======\n>>>>>>> branch\n"},
 	} {
 		f.Add(seed.name, seed.content)
 	}
 	f.Fuzz(func(t *testing.T, name, content string) {
 		task := generatedTaskForFuzz()
-		EditSection(task, name, []byte(content))
+		if err := EditSection(task, name, []byte(content)); err != nil {
+			var usage syaerr.Usage
+			if !errors.As(err, &usage) {
+				t.Fatalf("EditSection(%q) error = %T %v, want Usage", name, err, err)
+			}
+			return
+		}
 		data, err := Serialize(task)
 		if err != nil {
 			t.Fatalf("Serialize after EditSection(%q): %v", name, err)
@@ -39,12 +54,15 @@ func FuzzAppendLog(f *testing.F) {
 		{"codex", "created"},
 		{"agent\n## Injected", "line with ## heading"},
 		{"雪", "\x00\U0001f9ea\nmulti\nline"},
+		{"marker", "<<<<<<< HEAD\n=======\n>>>>>>> branch"},
 	} {
 		f.Add(seed.actor, seed.line)
 	}
 	f.Fuzz(func(t *testing.T, actor, line string) {
 		task := generatedTaskForFuzz()
-		AppendLog(task, actor, line)
+		if err := AppendLog(task, actor, line); err != nil {
+			t.Fatalf("AppendLog(%q, %q): %v", actor, line, err)
+		}
 		data, err := Serialize(task)
 		if err != nil {
 			t.Fatalf("Serialize after AppendLog: %v", err)
