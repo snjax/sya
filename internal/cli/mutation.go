@@ -208,7 +208,9 @@ func (a *App) recordTransitionEvent(state *projectState, taskID, from, to, resul
 		ErrorType:  errorType,
 		Violations: violations,
 	}
-	_ = events.Append(state.Project.Root, event)
+	if err := a.appendEvent(state.Project.Root, event); err != nil && !a.quiet {
+		fmt.Fprintf(a.err, "warning: could not append event: %v\n", err)
+	}
 	if result == events.ResultDenied {
 		a.fireDeniedTransitionAlert(state.Project, event)
 	}
@@ -218,53 +220,29 @@ func moveTask(state *projectState, root string, t *task.Task, transition schema.
 	from := t.Status
 	t.Status = transition.To
 	if write {
-		appendTransitionLog(t, now, actor, from, transition.To, string(transition.Kind), reason)
+		if err := appendTransitionLog(t, now, actor, from, transition.To, string(transition.Kind), reason); err != nil {
+			return err
+		}
 		return writeTask(root, t)
 	}
 	t.Status = from
 	return nil
 }
 
-func appendTransitionLog(t *task.Task, ts time.Time, actor, from, to, kind, reason string) {
+func appendTransitionLog(t *task.Task, ts time.Time, actor, from, to, kind, reason string) error {
 	marker := ""
 	if kind == string(schema.TransitionSetback) {
 		marker = " ↩"
 	}
-	line := fmt.Sprintf("- %s @%s: %s -> %s%s", ts.UTC().Format(time.RFC3339), actor, from, to, marker)
+	line := fmt.Sprintf("%s -> %s%s", from, to, marker)
 	if strings.TrimSpace(reason) != "" {
 		line += ": " + strings.TrimSpace(reason)
 	}
-	appendLogLine(t, line)
+	return appendTaskLog(t, ts, actor, line)
 }
 
-func appendLogLine(t *task.Task, line string) {
-	idx := -1
-	for i, section := range t.Body.Sections {
-		if section.Name == "Log" {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		t.Body.Sections = append(t.Body.Sections, task.Section{Name: "Log", Raw: []byte("## Log\n" + line + "\n")})
-		rebuildTaskBody(t)
-		return
-	}
-	raw := t.Body.Sections[idx].Raw
-	if len(raw) > 0 && !strings.HasSuffix(string(raw), "\n") {
-		raw = append(raw, '\n')
-	}
-	raw = append(raw, []byte(line+"\n")...)
-	t.Body.Sections[idx].Raw = raw
-	rebuildTaskBody(t)
-}
-
-func rebuildTaskBody(t *task.Task) {
-	var raw []byte
-	for _, section := range t.Body.Sections {
-		raw = append(raw, section.Raw...)
-	}
-	t.Body.Raw = raw
+func appendTaskLog(t *task.Task, ts time.Time, actor, message string) error {
+	return task.AppendLogAt(t, ts.UTC(), actor, message)
 }
 
 func declaredField(typeDef schema.TypeDef, name string) (schema.FieldDef, bool) {

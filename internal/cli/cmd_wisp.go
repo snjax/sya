@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
@@ -78,7 +79,9 @@ func (a *App) wispCreateCommand() *cobra.Command {
 	var description string
 	var file string
 	cmd := a.command("create \"Title\"", "Create a freeform wisp", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-		return a.runWispCreate(args[0], description, file)
+		return a.withProjectMutationLock(func() (any, error) {
+			return a.runWispCreate(args[0], description, file)
+		})
 	})
 	cmd.Flags().StringVarP(&description, "description", "d", "", "wisp markdown body")
 	cmd.Flags().StringVar(&file, "file", "", "wisp body file or -")
@@ -125,7 +128,9 @@ func (a *App) wispSquashCommand() *cobra.Command {
 		if typ == "" {
 			return nil, syaerr.Usage{Message: "wisp squash requires --type"}
 		}
-		return a.runWispSquash(args[0], typ)
+		return a.withProjectMutationLock(func() (any, error) {
+			return a.runWispSquash(args[0], typ)
+		})
 	})
 	cmd.Flags().StringVarP(&typ, "type", "t", "", "task type")
 	return cmd
@@ -133,20 +138,22 @@ func (a *App) wispSquashCommand() *cobra.Command {
 
 func (a *App) wispBurnCommand() *cobra.Command {
 	return a.command("burn <id>", "Delete a wisp", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-		project, err := a.DiscoverProject()
-		if err != nil {
-			return nil, err
-		}
-		w, err := resolveWisp(project, args[0])
-		if err != nil {
-			return nil, err
-		}
-		if err := os.Remove(filepath.Join(project.Root, filepath.FromSlash(w.File))); err != nil {
-			return nil, err
-		}
-		result := wispSummary(w)
-		result.Burned = true
-		return result, nil
+		return a.withProjectMutationLock(func() (any, error) {
+			project, err := a.DiscoverProject()
+			if err != nil {
+				return nil, err
+			}
+			w, err := resolveWisp(project, args[0])
+			if err != nil {
+				return nil, err
+			}
+			if err := os.Remove(filepath.Join(project.Root, filepath.FromSlash(w.File))); err != nil {
+				return nil, err
+			}
+			result := wispSummary(w)
+			result.Burned = true
+			return result, nil
+		})
 	})
 }
 
@@ -334,7 +341,7 @@ func writeWisp(root string, w wisp) error {
 	}
 	buf.WriteString("---\n")
 	buf.Write(w.Body)
-	return atomicWriteFile(filepath.Join(root, filepath.FromSlash(w.File)), buf.Bytes(), 0o644)
+	return fsutil.AtomicWriteFile(filepath.Join(root, filepath.FromSlash(w.File)), buf.Bytes(), 0o644)
 }
 
 func appendWispYAML(buf *bytes.Buffer, key string, value any) error {

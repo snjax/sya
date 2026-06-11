@@ -152,8 +152,32 @@ func TestCommentAppendsLog(t *testing.T) {
 		t.Fatalf("comment stdout=%q stderr=%q code=%d", stdout, stderr, code)
 	}
 	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "f000"})
-	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "- 2026-01-02T03:04:05Z @codex: Line one\nLine two") {
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "- 2026-01-02T03:04:05Z @codex: Line one\n  Line two") {
 		t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
+func TestCommentEscapesHostileLogText(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	fixtureProject(t, root)
+	message := "ok\n## Injected\n<<<<<<< HEAD\n=======\n>>>>>>> branch"
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--actor", "codex", "comment", "f000", "-m", message})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("comment stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "f000"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	for _, want := range []string{"  \\## Injected", "  \\<<<<<<< HEAD", "  \\=======", "  \\>>>>>>> branch"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("show missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "\n## Injected") || strings.Contains(stdout, "\n<<<<<<< HEAD") {
+		t.Fatalf("hostile text escaped incorrectly:\n%s", stdout)
 	}
 }
 

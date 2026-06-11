@@ -22,7 +22,9 @@ func init() {
 			if !auto && len(args) == 0 {
 				return nil, syaerr.Usage{Message: "archive requires ids or --auto"}
 			}
-			return app.runArchive(args, auto)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runArchive(args, auto)
+			})
 		})
 		cmd.Flags().BoolVar(&auto, "auto", false, "archive terminal tasks older than config archive.after_days")
 		return cmd
@@ -61,7 +63,9 @@ func (a *App) runArchive(ids []string, auto bool) (MutationResults, error) {
 	for _, t := range selected {
 		if !t.Archived {
 			t.Archived = true
-			appendLogLine(t, fmt.Sprintf("- %s @%s: archived", a.now().UTC().Format(time.RFC3339), a.Actor()))
+			if err := appendTaskLog(t, a.now(), a.Actor(), "archived"); err != nil {
+				return MutationResults{}, err
+			}
 			if err := writeTask(state.Project.Root, t); err != nil {
 				return MutationResults{}, err
 			}

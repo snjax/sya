@@ -13,7 +13,9 @@ func init() {
 		var section string
 		var file string
 		cmd := app.command("edit <id>", "Edit a task body section", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runEdit(args[0], section, file)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runEdit(args[0], section, file)
+			})
 		})
 		cmd.Flags().StringVar(&section, "section", "", "section name")
 		cmd.Flags().StringVar(&file, "file", "-", "section content file or -")

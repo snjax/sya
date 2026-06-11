@@ -12,7 +12,12 @@ func init() {
 		var explain bool
 		cmd := app.command("move <id>... <status>", "Move task status", cobra.MinimumNArgs(2), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			status := args[len(args)-1]
-			return app.runMove(args[:len(args)-1], status, explain)
+			if explain {
+				return app.runMove(args[:len(args)-1], status, explain)
+			}
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runMove(args[:len(args)-1], status, explain)
+			})
 		})
 		cmd.Flags().BoolVar(&explain, "explain", false, "check transition without writing")
 		return cmd
@@ -32,9 +37,6 @@ func (a *App) runMove(ids []string, status string, explain bool) (any, error) {
 			hadError = true
 		}
 		results.Results = append(results.Results, result)
-		if result.OK && !explain {
-			state, _ = a.loadProject()
-		}
 	}
 	if hadError {
 		if len(results.Results) == 1 && results.Results[0].Err != nil {

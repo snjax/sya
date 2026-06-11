@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/snjax/sya/internal/gitx"
 	"github.com/snjax/sya/internal/syaerr"
@@ -18,6 +17,11 @@ func init() {
 		var opts restoreOptions
 		cmd := app.command("restore <id>", "Show or apply a historical task body", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			opts.ID = args[0]
+			if opts.Apply {
+				return app.withProjectMutationLock(func() (any, error) {
+					return app.runRestore(ctx, opts, gitx.ExecRunner{})
+				})
+			}
 			return app.runRestore(ctx, opts, gitx.ExecRunner{})
 		})
 		cmd.Flags().StringVar(&opts.At, "at", "", "git revision to restore from")
@@ -82,7 +86,9 @@ func (a *App) runRestore(ctx context.Context, opts restoreOptions, runner gitx.R
 
 	current.Body = historical.Body
 	current.Archived = true
-	appendLogLine(current, fmt.Sprintf("- %s @%s: restored from %s", a.now().UTC().Format(time.RFC3339), a.Actor(), rev))
+	if err := appendTaskLog(current, a.now(), a.Actor(), "restored from "+rev); err != nil {
+		return RestoreResult{}, err
+	}
 	if err := writeTask(state.Project.Root, current); err != nil {
 		return RestoreResult{}, err
 	}

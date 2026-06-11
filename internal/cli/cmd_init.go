@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/spf13/cobra"
 )
@@ -74,7 +75,7 @@ func (a *App) runInit(prefix string) (InitResult, error) {
 	}
 	var created []string
 	for _, file := range files {
-		if err := atomicWriteFile(file.name, file.data, 0o644); err != nil {
+		if err := fsutil.AtomicWriteFile(file.name, file.data, 0o644); err != nil {
 			return InitResult{}, err
 		}
 		created = append(created, file.name)

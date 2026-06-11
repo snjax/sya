@@ -22,7 +22,7 @@ func TestArchiveRequiresTerminalTask(t *testing.T) {
 	if code != syaerr.ExitUsage || !strings.Contains(stderr, "cannot archive non-terminal tasks: a00001(todo)") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
-	parsed, err := task.Parse(findTaskFile(t, root, "a00001"))
+	parsed, err := parseTaskFile(t, findTaskFile(t, root, "a00001"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestArchiveTerminalTask(t *testing.T) {
 	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "a00001: ok") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	parsed, err := task.Parse(findTaskFile(t, root, "a00001"))
+	parsed, err := parseTaskFile(t, findTaskFile(t, root, "a00001"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestRestoreRoundTripInGitRepo(t *testing.T) {
 	gitOKCLI(t, root, "commit", "-m", "full task")
 
 	path := findTaskFile(t, root, "a00001")
-	parsed, err := task.Parse(path)
+	parsed, err := parseTaskFile(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestRestoreRoundTripInGitRepo(t *testing.T) {
 	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "restored body") {
 		t.Fatalf("restore apply code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	restored, err := task.Parse(path)
+	restored, err := parseTaskFile(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestWispLifecycleAndSquash(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".sya", "wisps", "w-abc123-loose-note.md")); !os.IsNotExist(err) {
 		t.Fatalf("wisp was not burned after squash: %v", err)
 	}
-	created, err := task.Parse(findTaskFile(t, root, "t00001"))
+	created, err := parseTaskFile(t, findTaskFile(t, root, "t00001"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +174,20 @@ func findTaskFile(t *testing.T, root, id string) string {
 		t.Fatalf("expected one task file for %s, got %v", id, matches)
 	}
 	return matches[0]
+}
+
+func parseTaskFile(t *testing.T, path string) (*task.Task, error) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := task.ParseBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	parsed.File = path
+	return parsed, nil
 }
 
 func gitOKCLI(t *testing.T, dir string, args ...string) {

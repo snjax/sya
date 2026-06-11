@@ -13,50 +13,54 @@ import (
 	"strings"
 	"time"
 
+	"github.com/snjax/sya/internal/events"
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
 
 type Options struct {
-	Version string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
-	WorkDir string
-	Env     func(string) string
-	GitUser func(context.Context) (string, error)
-	Now     func() time.Time
-	NewID   func(map[string]struct{}, int) (string, error)
+	Version     string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	WorkDir     string
+	Env         func(string) string
+	GitUser     func(context.Context) (string, error)
+	Now         func() time.Time
+	NewID       func(map[string]struct{}, int) (string, error)
+	AppendEvent func(string, events.Event) error
 }
 
 type App struct {
-	json     bool
-	quiet    bool
-	actor    string
-	root     *cobra.Command
-	in       io.Reader
-	out      io.Writer
-	err      io.Writer
-	workDir  string
-	env      func(string) string
-	gitUser  func(context.Context) (string, error)
-	now      func() time.Time
-	newID    func(map[string]struct{}, int) (string, error)
-	result   any
-	colorize Colorizer
+	json        bool
+	quiet       bool
+	actor       string
+	root        *cobra.Command
+	in          io.Reader
+	out         io.Writer
+	err         io.Writer
+	workDir     string
+	env         func(string) string
+	gitUser     func(context.Context) (string, error)
+	now         func() time.Time
+	newID       func(map[string]struct{}, int) (string, error)
+	appendEvent func(string, events.Event) error
+	result      any
+	colorize    Colorizer
 }
 
 func New(options Options) *App {
 	app := &App{
-		in:      options.Stdin,
-		out:     options.Stdout,
-		err:     options.Stderr,
-		workDir: options.WorkDir,
-		env:     options.Env,
-		gitUser: options.GitUser,
-		now:     options.Now,
-		newID:   options.NewID,
+		in:          options.Stdin,
+		out:         options.Stdout,
+		err:         options.Stderr,
+		workDir:     options.WorkDir,
+		env:         options.Env,
+		gitUser:     options.GitUser,
+		now:         options.Now,
+		newID:       options.NewID,
+		appendEvent: options.AppendEvent,
 	}
 	if app.in == nil {
 		app.in = os.Stdin
@@ -78,6 +82,9 @@ func New(options Options) *App {
 	}
 	if app.newID == nil {
 		app.newID = task.NewID
+	}
+	if app.appendEvent == nil {
+		app.appendEvent = events.Append
 	}
 	app.colorize = NewColorizer(app.env)
 

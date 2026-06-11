@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/task"
@@ -21,7 +22,29 @@ type Change struct {
 	Message string `json:"message,omitempty"`
 }
 
+type Writer interface {
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Remove(name string) error
+}
+
+type OSWriter struct{}
+
+func (OSWriter) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return fsutil.AtomicWriteFile(name, data, perm)
+}
+
+func (OSWriter) Remove(name string) error {
+	return os.Remove(name)
+}
+
 func FixMerge(path string) ([]Change, error) {
+	return FixMergeWith(OSWriter{}, path)
+}
+
+func FixMergeWith(writer Writer, path string) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -49,7 +72,7 @@ func FixMerge(path string) ([]Change, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, out, 0o644); err != nil {
+	if err := writer.WriteFile(path, out, 0o644); err != nil {
 		return nil, err
 	}
 	return []Change{{Path: path, Action: "fix_merge", Message: "merged Log conflict"}}, nil
@@ -60,6 +83,13 @@ func ReassignID(idx *index.Index, oldID string) ([]Change, error) {
 }
 
 func ReassignIDInDir(projectDir string, idx *index.Index, oldID string) ([]Change, error) {
+	return ReassignIDInDirWith(OSWriter{}, projectDir, idx, oldID)
+}
+
+func ReassignIDInDirWith(writer Writer, projectDir string, idx *index.Index, oldID string) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	target, err := idx.Get(oldID)
 	if err != nil {
 		return nil, err
@@ -79,11 +109,11 @@ func ReassignIDInDir(projectDir string, idx *index.Index, oldID string) ([]Chang
 	oldPath := resolvePath(projectDir, target.File)
 	newPath := reassignedPath(oldPath, oldID, newID)
 	target.ID = newID
-	if err := writeTask(newPath, target); err != nil {
+	if err := writeTask(writer, newPath, target); err != nil {
 		return nil, err
 	}
 	if oldPath != newPath {
-		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		if err := writer.Remove(oldPath); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 	}
@@ -110,7 +140,7 @@ func ReassignIDInDir(projectDir string, idx *index.Index, oldID string) ([]Chang
 		if !changed {
 			continue
 		}
-		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+		if err := writeTask(writer, resolvePath(projectDir, t.File), t); err != nil {
 			return nil, err
 		}
 		changes = append(changes, Change{Path: t.File, Action: "update_reference", From: oldID, To: newID})
@@ -119,20 +149,27 @@ func ReassignIDInDir(projectDir string, idx *index.Index, oldID string) ([]Chang
 }
 
 func FixSafe(projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	return FixSafeWith(OSWriter{}, projectDir, idx, sch, report)
+}
+
+func FixSafeWith(writer Writer, projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	var changes []Change
-	symmetricChanges, err := FixSymmetricDup(projectDir, idx, sch)
+	symmetricChanges, err := FixSymmetricDupWith(writer, projectDir, idx, sch)
 	if err != nil {
 		return nil, err
 	}
 	changes = append(changes, symmetricChanges...)
 
-	relationChanges, err := FixRelationLists(projectDir, idx)
+	relationChanges, err := FixRelationListsWith(writer, projectDir, idx)
 	if err != nil {
 		return nil, err
 	}
 	changes = append(changes, relationChanges...)
 
-	versionChanges, err := FixSchemaVersionDrift(projectDir, idx, sch, report)
+	versionChanges, err := FixSchemaVersionDriftWith(writer, projectDir, idx, sch, report)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +179,13 @@ func FixSafe(projectDir string, idx *index.Index, sch *schema.Schema, report Rep
 }
 
 func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([]Change, error) {
+	return FixSymmetricDupWith(OSWriter{}, projectDir, idx, sch)
+}
+
+func FixSymmetricDupWith(writer Writer, projectDir string, idx *index.Index, sch *schema.Schema) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	var changes []Change
 	for _, t := range idx.All() {
 		changed := false
@@ -172,7 +216,7 @@ func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([
 		if !changed {
 			continue
 		}
-		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+		if err := writeTask(writer, resolvePath(projectDir, t.File), t); err != nil {
 			return nil, err
 		}
 		changes = append(changes, Change{Path: t.File, Action: "fix_symmetric_duplicate"})
@@ -181,13 +225,20 @@ func FixSymmetricDup(projectDir string, idx *index.Index, sch *schema.Schema) ([
 }
 
 func FixRelationLists(projectDir string, idx *index.Index) ([]Change, error) {
+	return FixRelationListsWith(OSWriter{}, projectDir, idx)
+}
+
+func FixRelationListsWith(writer Writer, projectDir string, idx *index.Index) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	var changes []Change
 	for _, t := range idx.All() {
 		changed := canonicalizeRelationLists(t)
 		if !changed {
 			continue
 		}
-		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+		if err := writeTask(writer, resolvePath(projectDir, t.File), t); err != nil {
 			return nil, err
 		}
 		changes = append(changes, Change{Path: t.File, Action: "sort_relations", Message: "sorted and deduplicated relation lists"})
@@ -196,6 +247,13 @@ func FixRelationLists(projectDir string, idx *index.Index) ([]Change, error) {
 }
 
 func FixSchemaVersionDrift(projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	return FixSchemaVersionDriftWith(OSWriter{}, projectDir, idx, sch, report)
+}
+
+func FixSchemaVersionDriftWith(writer Writer, projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
 	if sch == nil {
 		return nil, nil
 	}
@@ -207,7 +265,7 @@ func FixSchemaVersionDrift(projectDir string, idx *index.Index, sch *schema.Sche
 		}
 		from := fmt.Sprint(t.SchemaVersion)
 		t.SchemaVersion = sch.SchemaVersion
-		if err := writeTask(resolvePath(projectDir, t.File), t); err != nil {
+		if err := writeTask(writer, resolvePath(projectDir, t.File), t); err != nil {
 			return nil, err
 		}
 		changes = append(changes, Change{
@@ -369,7 +427,7 @@ func rebuildBodyRaw(t *task.Task) {
 	}
 }
 
-func writeTask(path string, t *task.Task) error {
+func writeTask(writer Writer, path string, t *task.Task) error {
 	out, err := task.Serialize(t)
 	if err != nil {
 		return err
@@ -377,7 +435,10 @@ func writeTask(path string, t *task.Task) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, out, 0o644)
+	if writer == nil {
+		writer = OSWriter{}
+	}
+	return writer.WriteFile(path, out, 0o644)
 }
 
 func resolvePath(projectDir, path string) string {

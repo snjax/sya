@@ -42,6 +42,19 @@ func (e GitRequired) Error() string {
 func (e GitRequired) Type() string  { return "git_required" }
 func (e GitRequired) ExitCode() int { return ExitUsage }
 
+type ProjectLocked struct {
+	Path string `json:"path,omitempty"`
+}
+
+func (e ProjectLocked) Error() string {
+	if e.Path == "" {
+		return "timed out waiting for project lock"
+	}
+	return "timed out waiting for project lock: " + e.Path
+}
+func (e ProjectLocked) Type() string  { return "project_locked" }
+func (e ProjectLocked) ExitCode() int { return ExitUsage }
+
 type NotFound struct {
 	ID string `json:"id"`
 }
@@ -202,6 +215,7 @@ func Payload(err error) ErrorPayload {
 	var schemaInvalid SchemaInvalid
 	var conflictMarkers ErrConflictMarkers
 	var gitRequired GitRequired
+	var projectLocked ProjectLocked
 	var usage Usage
 	switch {
 	case errors.As(err, &notFound):
@@ -228,6 +242,8 @@ func Payload(err error) ErrorPayload {
 	case errors.As(err, &conflictMarkers):
 		payload.Path = conflictMarkers.Path
 	case errors.As(err, &gitRequired):
+	case errors.As(err, &projectLocked):
+		payload.Path = projectLocked.Path
 	case errors.As(err, &usage):
 	}
 	return payload

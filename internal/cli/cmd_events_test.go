@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,6 +83,69 @@ func TestDeniedEventErrorTypes(t *testing.T) {
 	}
 	if read[1].ErrorType != "transition_not_allowed" {
 		t.Fatalf("not allowed error_type=%q", read[1].ErrorType)
+	}
+}
+
+func TestEventsCommandDiscoversProjectWithoutLoadingIndex(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	if err := events.Append(root, events.Event{
+		TS:     time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Actor:  "codex",
+		Task:   "a00001",
+		From:   "todo",
+		To:     "in_progress",
+		Result: events.ResultOK,
+	}); err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".sya", "schema.yml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatalf("corrupt schema: %v", err)
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--json", "events"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("events code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, `"task":"a00001"`) {
+		t.Fatalf("events output missing event: %s", stdout)
+	}
+}
+
+func TestEventAppendErrorWarnsButDoesNotFail(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "b00001", "Dependency")
+	var stdout, stderr bytes.Buffer
+	app := New(Options{
+		Version: "test",
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+		WorkDir: root,
+		Env: func(string) string {
+			return ""
+		},
+		GitUser: func(context.Context) (string, error) {
+			return "", errors.New("git user unset")
+		},
+		Now: func() time.Time {
+			return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		},
+		AppendEvent: func(string, events.Event) error {
+			return errors.New("event store unavailable")
+		},
+	})
+
+	code := app.Execute([]string{"move", "b00001", "in_progress"})
+	if code != syaerr.ExitOK {
+		t.Fatalf("move code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning: could not append event: event store unavailable") {
+		t.Fatalf("stderr missing warning: %q", stderr.String())
 	}
 }
 
@@ -189,7 +255,9 @@ func TestInitAndDoctorEventsGitignore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gitignore), ".sya/events.jsonl") || !strings.Contains(string(gitignore), ".sya/wisps/") {
+	if !strings.Contains(string(gitignore), ".sya/events.jsonl") ||
+		!strings.Contains(string(gitignore), ".sya/wisps/") ||
+		!strings.Contains(string(gitignore), ".sya/.lock") {
 		t.Fatalf(".gitignore missing runtime entries:\n%s", gitignore)
 	}
 
@@ -199,12 +267,18 @@ func TestInitAndDoctorEventsGitignore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".sya", "events.jsonl"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write events: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".sya", ".lock"), nil, 0o644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
 	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"doctor"})
 	if code != syaerr.ExitOK || stderr != "" {
 		t.Fatalf("doctor code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if !strings.Contains(stdout, "events_not_ignored") {
 		t.Fatalf("doctor missing events_not_ignored warning:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "lock_not_ignored") {
+		t.Fatalf("doctor missing lock_not_ignored warning:\n%s", stdout)
 	}
 }
 

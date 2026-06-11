@@ -157,6 +157,43 @@ func TestFixSymmetricDup(t *testing.T) {
 	}
 }
 
+func TestFixRelationListsWriterFakeMatchesReal(t *testing.T) {
+	t.Parallel()
+
+	realDir := t.TempDir()
+	fakeDir := t.TempDir()
+	for _, dir := range []string{realDir, fakeDir} {
+		writeSchema(t, dir)
+		writeTaskFile(t, dir, "tasks/a00001-target.md", &task.Task{ID: "a00001", Type: "task", Title: "Target", Status: "todo", SchemaVersion: 1, Body: body("Description", "target\n")})
+		writeTaskFile(t, dir, "tasks/z00001-target.md", &task.Task{ID: "z00001", Type: "task", Title: "Target Z", Status: "todo", SchemaVersion: 1, Body: body("Description", "target z\n")})
+		writeTaskFile(t, dir, "tasks/ref001-ref.md", &task.Task{ID: "ref001", Type: "task", Title: "Ref", Status: "todo", Relations: map[string][]string{"depends_on": {"z00001", "a00001", "a00001"}}, SchemaVersion: 1, Body: body("Description", "ref\n")})
+	}
+
+	_, realIndex := loadProject(t, os.DirFS(realDir), ".")
+	realChanges, err := FixRelationListsWith(OSWriter{}, realDir, realIndex)
+	if err != nil {
+		t.Fatalf("FixRelationListsWith(OSWriter) error = %v", err)
+	}
+	realData, err := os.ReadFile(filepath.Join(realDir, "tasks", "ref001-ref.md"))
+	if err != nil {
+		t.Fatalf("read real fixed task: %v", err)
+	}
+
+	_, fakeIndex := loadProject(t, os.DirFS(fakeDir), ".")
+	fakeWriter := newFakeDoctorWriter()
+	fakeChanges, err := FixRelationListsWith(fakeWriter, fakeDir, fakeIndex)
+	if err != nil {
+		t.Fatalf("FixRelationListsWith(fake) error = %v", err)
+	}
+	fakePath := filepath.Join(fakeDir, "tasks", "ref001-ref.md")
+	if !bytes.Equal(fakeWriter.files[fakePath], realData) {
+		t.Fatalf("fake write differs\n--- got ---\n%s\n--- want ---\n%s", fakeWriter.files[fakePath], realData)
+	}
+	if fmt.Sprint(fakeChanges) != fmt.Sprint(realChanges) {
+		t.Fatalf("fake changes = %#v, want %#v", fakeChanges, realChanges)
+	}
+}
+
 func TestGeneratedValidProjectsHaveNoFindings(t *testing.T) {
 	t.Parallel()
 
@@ -331,6 +368,25 @@ func assertReference(t *testing.T, idx *index.Index, id, relation, target string
 	if !contains(task.Relations[relation], target) {
 		t.Fatalf("%s.%s = %#v, want %q", id, relation, task.Relations[relation], target)
 	}
+}
+
+type fakeDoctorWriter struct {
+	files   map[string][]byte
+	removed []string
+}
+
+func newFakeDoctorWriter() *fakeDoctorWriter {
+	return &fakeDoctorWriter{files: make(map[string][]byte)}
+}
+
+func (w *fakeDoctorWriter) WriteFile(name string, data []byte, _ fs.FileMode) error {
+	w.files[name] = append([]byte(nil), data...)
+	return nil
+}
+
+func (w *fakeDoctorWriter) Remove(name string) error {
+	w.removed = append(w.removed, name)
+	return nil
 }
 
 func generatedProject(seed int) fstest.MapFS {

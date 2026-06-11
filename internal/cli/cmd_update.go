@@ -12,7 +12,9 @@ func init() {
 		var opts updateOptions
 		cmd := app.command("update <id>", "Update task metadata", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			opts.ID = args[0]
-			return app.runUpdate(opts)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runUpdate(opts)
+			})
 		})
 		cmd.Flags().StringVar(&opts.Title, "title", "", "new title")
 		cmd.Flags().StringVar(&opts.Priority, "priority", "", "new priority")

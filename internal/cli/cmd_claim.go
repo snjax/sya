@@ -12,7 +12,9 @@ func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var steal bool
 		cmd := app.command("claim <id>", "Claim a task", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runClaim(args[0], steal)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runClaim(args[0], steal)
+			})
 		})
 		cmd.Flags().BoolVar(&steal, "steal", false, "steal claim from current assignee")
 		return cmd

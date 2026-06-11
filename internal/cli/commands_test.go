@@ -175,6 +175,20 @@ func TestCreateFlagsAndErrors(t *testing.T) {
 			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
 		}
 	})
+	t.Run("batch updates in-memory index", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		batch := "- title: Batch One\n  type: task\n- title: Batch Two\n  type: task\n  relations:\n    depends_on: [c00001]\n"
+		stdout, stderr, code := runCLI(t, root, []string{"c00001", "d00001"}, strings.NewReader(batch), []string{"create", "--from-file", "-"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "created c00001") || !strings.Contains(stdout, "created d00001") {
+			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+		stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "d00001"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "depends_on: c00001") {
+			t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+	})
 	t.Run("bad type", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

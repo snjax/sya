@@ -55,6 +55,7 @@ func FuzzAppendLog(f *testing.F) {
 		{"agent\n## Injected", "line with ## heading"},
 		{"雪", "\x00\U0001f9ea\nmulti\nline"},
 		{"marker", "<<<<<<< HEAD\n=======\n>>>>>>> branch"},
+		{"hostile", "first\n## Section takeover\n<<<<<<< HEAD\n=======\n>>>>>>> branch\n- fake entry"},
 	} {
 		f.Add(seed.actor, seed.line)
 	}

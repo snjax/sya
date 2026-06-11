@@ -10,12 +10,16 @@ import (
 func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		return app.command("link <id> <relation> <id2>", "Link two tasks", cobra.ExactArgs(3), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runLink(args[0], args[1], args[2], true)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runLink(args[0], args[1], args[2], true)
+			})
 		})
 	})
 	registerCommand(func(app *App) *cobra.Command {
 		return app.command("unlink <id> <relation> <id2>", "Unlink two tasks", cobra.ExactArgs(3), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runLink(args[0], args[1], args[2], false)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runLink(args[0], args[1], args[2], false)
+			})
 		})
 	})
 }

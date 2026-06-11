@@ -28,6 +28,8 @@ type Index struct {
 
 type ReverseEdges map[string]map[string][]string
 
+type edgeSet map[string]map[string]map[string]struct{}
+
 type QuarantinedFile struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
@@ -195,6 +197,30 @@ func (i *Index) addTask(t *task.Task) {
 	i.tasks[t.ID] = t
 }
 
+// Add inserts a freshly written task into an existing index and recomputes the
+// derived ordering and relation views. It is intended for command flows that
+// create tasks one at a time and need later items in the same batch to resolve
+// earlier ones without reloading from disk.
+func (i *Index) Add(t *task.Task) {
+	if i == nil {
+		return
+	}
+	i.addTask(t)
+	i.rebuildOrder()
+	i.warnings = withoutWarningsKind(i.warnings, "duplicate_edge")
+	i.buildReverseEdges()
+}
+
+func withoutWarningsKind(warnings []Warning, kind string) []Warning {
+	out := warnings[:0]
+	for _, warning := range warnings {
+		if warning.Kind != kind {
+			out = append(out, warning)
+		}
+	}
+	return out
+}
+
 func loadTaskFile(fsys fs.FS, filePath string) taskFileResult {
 	data, err := fs.ReadFile(fsys, filePath)
 	if err != nil {
@@ -224,23 +250,23 @@ func (i *Index) rebuildOrder() {
 }
 
 func (i *Index) buildReverseEdges() {
-	i.forward = make(map[string]map[string][]string)
-	i.reverse = make(ReverseEdges)
+	forward := make(edgeSet)
+	reverse := make(edgeSet)
 	i.edgeOrigins = make(map[CanonicalEdge][]EdgeOrigin)
 
 	for _, id := range i.order {
 		t := i.tasks[id]
 		if t.Parent != "" {
-			i.addReverse(t.Parent, childrenRelation, t.ID)
+			addEdge(reverse, t.Parent, childrenRelation, t.ID)
 		}
 		for relation := range t.Relations {
-			targets := append([]string(nil), t.Relations[relation]...)
-			sort.Strings(targets)
-			for _, target := range targets {
-				i.addRelationEdge(t, relation, target)
+			for _, target := range t.Relations[relation] {
+				i.addRelationEdge(forward, reverse, t, relation, target)
 			}
 		}
 	}
+	i.forward = materializeEdgeSet(forward)
+	i.reverse = ReverseEdges(materializeEdgeSet(reverse))
 
 	for edge, origins := range i.edgeOrigins {
 		if len(origins) < 2 {
@@ -256,7 +282,7 @@ func (i *Index) buildReverseEdges() {
 	sortWarnings(i.warnings)
 }
 
-func (i *Index) addRelationEdge(source *task.Task, relation, target string) {
+func (i *Index) addRelationEdge(forward, reverse edgeSet, source *task.Task, relation, target string) {
 	edge, ok := i.canonicalEdge(source.ID, relation, target)
 	if !ok {
 		return
@@ -267,31 +293,46 @@ func (i *Index) addRelationEdge(source *task.Task, relation, target string) {
 		Relation: relation,
 		Target:   target,
 	})
-	i.addForward(edge.From, edge.Relation, edge.To)
+	addEdge(forward, edge.From, edge.Relation, edge.To)
 
 	relationDef := i.relationDef(edge.Relation)
 	if relationDef.Symmetric {
-		i.addReverse(edge.From, edge.Relation, edge.To)
-		i.addReverse(edge.To, edge.Relation, edge.From)
+		addEdge(reverse, edge.From, edge.Relation, edge.To)
+		addEdge(reverse, edge.To, edge.Relation, edge.From)
 		return
 	}
-	if reverse := relationDef.Reverse; reverse != "" {
-		i.addReverse(edge.To, reverse, edge.From)
+	if reverseName := relationDef.Reverse; reverseName != "" {
+		addEdge(reverse, edge.To, reverseName, edge.From)
 	}
 }
 
-func (i *Index) addForward(id, relation, target string) {
+func addEdge(edges edgeSet, id, relation, target string) {
 	if id == "" || target == "" {
 		return
 	}
-	if i.forward[id] == nil {
-		i.forward[id] = make(map[string][]string)
+	if edges[id] == nil {
+		edges[id] = make(map[string]map[string]struct{})
 	}
-	if contains(i.forward[id][relation], target) {
-		return
+	if edges[id][relation] == nil {
+		edges[id][relation] = make(map[string]struct{})
 	}
-	i.forward[id][relation] = append(i.forward[id][relation], target)
-	sort.Strings(i.forward[id][relation])
+	edges[id][relation][target] = struct{}{}
+}
+
+func materializeEdgeSet(edges edgeSet) map[string]map[string][]string {
+	out := make(map[string]map[string][]string, len(edges))
+	for id, relations := range edges {
+		out[id] = make(map[string][]string, len(relations))
+		for relation, targets := range relations {
+			values := make([]string, 0, len(targets))
+			for target := range targets {
+				values = append(values, target)
+			}
+			sort.Strings(values)
+			out[id][relation] = values
+		}
+	}
+	return out
 }
 
 func (i *Index) canonicalEdge(source, relation, target string) (CanonicalEdge, bool) {

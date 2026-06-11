@@ -169,23 +169,6 @@ func TestParseTable(t *testing.T) {
 	}
 }
 
-func TestParsePath(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "task.md")
-	if err := os.WriteFile(path, readTestdata(t, "sya_written.md"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := Parse(path)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if got.File != path {
-		t.Fatalf("File = %q, want %q", got.File, path)
-	}
-}
-
 func TestForeignValidBodyPreservedAndFrontmatterSemantic(t *testing.T) {
 	t.Parallel()
 
@@ -300,10 +283,21 @@ func TestAppendLogEscapesInjectedLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendLog(parsed, "agent\n## Injected", "<<<<<<< HEAD\n=======\n>>>>>>> branch"); err != nil {
+	if err := AppendLogAt(parsed, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), "agent\n## Injected", "first\n## Injected\n<<<<<<< HEAD\n=======\n>>>>>>> branch"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(parsed.Body.Raw, []byte("\\## Injected")) || !bytes.Contains(parsed.Body.Raw, []byte("\\=======")) || !bytes.Contains(parsed.Body.Raw, []byte("\\>>>>>>> branch")) {
+	for _, want := range [][]byte{
+		[]byte("- 2026-01-02T03:04:05Z @agent \\## Injected: first\n"),
+		[]byte("  \\## Injected\n"),
+		[]byte("  \\<<<<<<< HEAD\n"),
+		[]byte("  \\=======\n"),
+		[]byte("  \\>>>>>>> branch\n"),
+	} {
+		if !bytes.Contains(parsed.Body.Raw, want) {
+			t.Fatalf("log content missing %q:\n%s", want, parsed.Body.Raw)
+		}
+	}
+	if bytes.Contains(parsed.Body.Raw, []byte("\n## Injected")) || bytes.Contains(parsed.Body.Raw, []byte("\n<<<<<<<")) {
 		t.Fatalf("log content was not escaped:\n%s", parsed.Body.Raw)
 	}
 	if _, err := ParseBytes(mustSerializeForTest(t, parsed)); err != nil {

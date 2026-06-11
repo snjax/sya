@@ -189,51 +189,18 @@ func (r *ValidationResult) validateGuards(typeName string, typeDef TypeDef) {
 		path := "types." + typeName + ".transitions." + transitionKey(transition.From, transition.To)
 		for guardIndex, guard := range transition.Guards {
 			guardPath := fmt.Sprintf("%s.guards[%d]", path, guardIndex)
-			switch guard.Kind {
-			case GuardRelationStatus:
-				relation, ok := stringParam(guard, "relation")
-				if !ok {
-					r.addViolation("guard_param_missing", guardPath+".relation", "relation_status guard must declare relation")
-					break
-				}
-				if _, declared := r.schemaRelations(typeName)[relation]; !declared {
-					r.addViolation("guard_relation_unknown", guardPath+".relation", fmt.Sprintf("guard references undeclared relation %q", relation))
-				}
-				r.warnUnknownInStatuses(guardPath+".in", guard, r.relationTargetTypes(typeName, relation))
-			case GuardRelationExists:
-				relation, ok := stringParam(guard, "relation")
-				if !ok {
-					r.addViolation("guard_param_missing", guardPath+".relation", "relation_exists guard must declare relation")
-					break
-				}
-				if _, declared := r.schemaRelations(typeName)[relation]; !declared {
-					r.addViolation("guard_relation_unknown", guardPath+".relation", fmt.Sprintf("guard references undeclared relation %q", relation))
-				}
-			case GuardField:
-				field, ok := stringParam(guard, "field")
-				if !ok {
-					r.addViolation("guard_param_missing", guardPath+".field", "field guard must declare field")
-					break
-				}
-				if _, declared := typeDef.Fields[field]; !declared {
-					r.addViolation("guard_field_unknown", guardPath+".field", fmt.Sprintf("guard references undeclared field %q", field))
-				}
-			case GuardChildrenStatus:
-				r.warnUnknownInStatuses(guardPath+".in", guard, r.childrenTargetTypes(typeDef))
-			case GuardParentStatus:
-				r.warnUnknownInStatuses(guardPath+".in", guard, r.parentTargetTypes(typeName))
-			case GuardSectionNonempty:
-				section, ok := stringParam(guard, "section")
-				if !ok {
-					r.addViolation("guard_param_missing", guardPath+".section", "section_nonempty guard must declare section")
-					break
-				}
-				if !makeStringSet(typeDef.Sections)[section] {
-					r.addViolation("guard_section_unknown", guardPath+".section", fmt.Sprintf("guard references undeclared section %q", section))
-				}
-			default:
+			def, ok := guardKindRegistry[guard.Kind]
+			if !ok {
 				r.addViolation("guard_kind_unknown", guardPath+".kind", fmt.Sprintf("guard kind %q is not supported", guard.Kind))
+				continue
 			}
+			r.Violations = append(r.Violations, def.ValidateDecl(guardValidateContext{
+				Result:    r,
+				TypeName:  typeName,
+				TypeDef:   typeDef,
+				GuardPath: guardPath,
+				Guard:     guard,
+			})...)
 		}
 	}
 }

@@ -185,65 +185,20 @@ func evaluateImplicitBlocking(schema *Schema, resolver Resolver, task TaskView, 
 }
 
 func evaluateGuard(schema *Schema, resolver Resolver, task TaskView, guard Guard) (Violation, bool) {
-	switch guard.Kind {
-	case GuardRelationStatus:
-		relation, ok := stringParam(guard, "relation")
-		if !ok || !relationDeclared(schema, relation) {
-			return guardViolation(guard, ""), true
-		}
-		statuses, ok := stringSliceParam(guard, "in")
-		if !ok {
-			return guardViolation(guard, relation), true
-		}
-		return evaluateRelatedStatuses(schema, resolver, task.Relations(relation), statuses, guardViolation(guard, relation))
-	case GuardRelationExists:
-		relation, ok := stringParam(guard, "relation")
-		if !ok || !relationDeclared(schema, relation) {
-			return guardViolation(guard, ""), true
-		}
-		if len(task.Relations(relation)) == 0 {
-			return guardViolation(guard, relation), true
-		}
-		return Violation{}, false
-	case GuardField:
-		field, ok := stringParam(guard, "field")
-		if !ok {
-			return guardViolation(guard, ""), true
-		}
-		value, exists := task.Field(field)
-		if !exists || !fieldGuardMatches(guard, value) {
-			violation := guardViolation(guard, "")
-			violation.Field = field
-			return violation, true
-		}
-		return Violation{}, false
-	case GuardChildrenStatus:
-		statuses, ok := stringSliceParam(guard, "in")
-		if !ok {
-			return guardViolation(guard, ""), true
-		}
-		return evaluateRelatedStatuses(schema, resolver, task.Children(), statuses, guardViolation(guard, ""))
-	case GuardParentStatus:
-		statuses, ok := stringSliceParam(guard, "in")
-		if !ok {
-			return guardViolation(guard, ""), true
-		}
-		parentID, ok := task.Parent()
-		if !ok {
-			return guardViolation(guard, ""), true
-		}
-		return evaluateRelatedStatuses(schema, resolver, []string{parentID}, statuses, guardViolation(guard, ""))
-	case GuardSectionNonempty:
-		section, ok := stringParam(guard, "section")
-		if !ok || !task.SectionNonEmpty(section) {
-			violation := guardViolation(guard, "")
-			violation.Section = section
-			return violation, true
-		}
-		return Violation{}, false
-	default:
+	def, ok := guardKindRegistry[guard.Kind]
+	if !ok {
 		return guardViolation(guard, ""), true
 	}
+	violation := def.Evaluate(guardEvalContext{
+		Schema:   schema,
+		Resolver: resolver,
+		Task:     task,
+		Guard:    guard,
+	})
+	if violation == nil {
+		return Violation{}, false
+	}
+	return *violation, true
 }
 
 func evaluateRelatedStatuses(schema *Schema, resolver Resolver, ids []string, statuses []string, base Violation) (Violation, bool) {

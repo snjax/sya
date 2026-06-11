@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/spf13/cobra"
@@ -14,7 +13,9 @@ func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var message string
 		cmd := app.command("comment <id>", "Append a task comment to Log", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runComment(args[0], message)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runComment(args[0], message)
+			})
 		})
 		cmd.Flags().StringVarP(&message, "message", "m", "", "comment text")
 		return cmd
@@ -44,7 +45,9 @@ func (a *App) runComment(id, message string) (CommentResult, error) {
 	if err != nil {
 		return CommentResult{}, err
 	}
-	appendLogLine(t, fmt.Sprintf("- %s @%s: %s", a.now().UTC().Format(time.RFC3339), a.Actor(), message))
+	if err := appendTaskLog(t, a.now(), a.Actor(), message); err != nil {
+		return CommentResult{}, err
+	}
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return CommentResult{}, err
 	}

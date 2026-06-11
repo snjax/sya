@@ -1,6 +1,7 @@
 code: 0
 stdout:
 severity kind                       task     path                               message
+warning  lock_not_ignored                    .gitignore                         .sya/.lock should be ignored; run sya init in new projects or add .sya/.lock to .gitignore
 info     schema_version_drift       log001   .sya/tasks/log001-log-conflict.md  task schema_version 1 is older than schema version 2 [fixable]
 
 changes:

@@ -9,10 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/snjax/sya/internal/task"
 )
 
 var (
@@ -241,25 +242,31 @@ func TestSchemaDriftAfterMergeDoctorReportsConformance(t *testing.T) {
 
 func TestConcurrentClaimRace(t *testing.T) {
 	t.Parallel()
-	var last string
-	for attempt := 0; attempt < 20; attempt++ {
+	for round := 0; round < 50; round++ {
 		repo := initGitProject(t)
-		id := createTask(t, repo, fmt.Sprintf("Race %d", attempt))
+		id := createTask(t, repo, fmt.Sprintf("Race %d", round))
 
-		first, second := runConcurrentClaims(t, repo, id)
-		last = fmt.Sprintf("first=%+v\nsecond=%+v", first, second)
-		codes := []int{first.code, second.code}
-		sort.Ints(codes)
-		if codes[0] == 0 && codes[1] == 3 {
-			show := runSya(t, repo, nil, "show", id)
-			if show.code != 0 {
-				t.Fatalf("task corrupted after claim race: code=%d stdout=%s stderr=%s", show.code, show.stdout, show.stderr)
+		results := runConcurrentClaims(t, repo, id)
+		var winners []claimResult
+		var losers []claimResult
+		for _, result := range results {
+			switch result.code {
+			case 0:
+				winners = append(winners, result)
+			case 3:
+				losers = append(losers, result)
 			}
-			assertContains(t, first.stdout+first.stderr+second.stdout+second.stderr, "already claimed")
-			return
+		}
+		if len(winners) != 1 || len(losers) != 1 {
+			t.Fatalf("round %d: expected one winner and one loser, got %+v", round, results)
+		}
+		assertContains(t, losers[0].stdout+losers[0].stderr, "already claimed")
+
+		claimed := parseTaskByID(t, repo, id)
+		if claimed.Assignee != winners[0].actor {
+			t.Fatalf("round %d: assignee=%q, want winning actor %q\nwinner=%+v\nloser=%+v", round, claimed.Assignee, winners[0].actor, winners[0], losers[0])
 		}
 	}
-	t.Fatalf("claim race did not produce exactly one success and one already_claimed loser after retries\n%s", last)
 }
 
 func TestLogOnlyRebaseConflictFixMerge(t *testing.T) {
@@ -304,23 +311,31 @@ func initGitProject(t *testing.T) string {
 	return dir
 }
 
-func runConcurrentClaims(t *testing.T, repo, id string) (runResult, runResult) {
+type claimResult struct {
+	actor string
+	runResult
+}
+
+func runConcurrentClaims(t *testing.T, repo, id string) []claimResult {
 	t.Helper()
 	var wg sync.WaitGroup
 	start := make(chan struct{})
-	results := make([]runResult, 2)
+	results := make([]claimResult, 2)
 	for i, actor := range []string{"claim-a", "claim-b"} {
 		i, actor := i, actor
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
-			results[i] = runSyaWithEnv(t, repo, nil, []string{"SYA_ACTOR=" + actor}, "claim", id)
+			results[i] = claimResult{
+				actor:     actor,
+				runResult: runSyaWithEnv(t, repo, nil, []string{"SYA_ACTOR=" + actor}, "claim", id),
+			}
 		}()
 	}
 	close(start)
 	wg.Wait()
-	return results[0], results[1]
+	return results
 }
 
 func createTask(t *testing.T, repo, title string, args ...string) string {
@@ -469,6 +484,26 @@ func removeTaskFile(t *testing.T, repo, id string) {
 	if err := os.Remove(matches[0]); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func parseTaskByID(t *testing.T, repo, id string) *task.Task {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(repo, ".sya", "tasks", id+"-*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one task file for %s, got %v", id, matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := task.ParseBytes(data)
+	if err != nil {
+		t.Fatalf("task %s did not parse after race: %v\n%s", id, err, data)
+	}
+	return parsed
 }
 
 func readFile(t *testing.T, path string) string {

@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/goccy/go-yaml"
+	"github.com/snjax/sya/internal/fsutil"
+	"github.com/snjax/sya/internal/slug"
 	"github.com/snjax/sya/internal/syaerr"
 )
 
@@ -29,38 +30,23 @@ type frontmatter struct {
 	Tasks       []string `yaml:"tasks"`
 }
 
+type Writer interface {
+	WriteFile(name string, data []byte, perm fs.FileMode) error
+	Remove(name string) error
+}
+
+type OSWriter struct{}
+
+func (OSWriter) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	return fsutil.AtomicWriteFile(name, data, perm)
+}
+
+func (OSWriter) Remove(name string) error {
+	return os.Remove(name)
+}
+
 func Slug(text string) string {
-	var b strings.Builder
-	lastHyphen := false
-	for _, r := range strings.ToLower(text) {
-		if repl, ok := cyrillicSlug[r]; ok {
-			if repl == "" {
-				continue
-			}
-			if b.Len()+len(repl) > 40 {
-				break
-			}
-			b.WriteString(repl)
-			lastHyphen = false
-			continue
-		}
-		switch {
-		case r > unicode.MaxASCII:
-			continue
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastHyphen = false
-		case unicode.IsSpace(r) || r == '-' || r == '_':
-			if b.Len() > 0 && !lastHyphen {
-				b.WriteByte('-')
-				lastHyphen = true
-			}
-		}
-		if b.Len() >= 40 {
-			break
-		}
-	}
-	return strings.Trim(b.String(), "-")
+	return slug.Make(text)
 }
 
 func Load(fsys fs.FS, dir, name string) (Note, error) {
@@ -120,9 +106,16 @@ func List(fsys fs.FS, dir string) ([]Note, error) {
 }
 
 func Save(dir string, note Note) error {
+	return SaveWith(OSWriter{}, dir, note)
+}
+
+func SaveWith(writer Writer, dir string, note Note) error {
 	note.Name = Slug(note.Name)
 	if note.Name == "" {
 		return syaerr.Usage{Message: "memory key is required"}
+	}
+	if writer == nil {
+		writer = OSWriter{}
 	}
 	sort.Strings(note.Tasks)
 	note.Tasks = compact(note.Tasks)
@@ -130,15 +123,22 @@ func Save(dir string, note Note) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(filepath.Join(dir, note.Name+".md"), data, 0o644)
+	return writer.WriteFile(filepath.Join(dir, note.Name+".md"), data, 0o644)
 }
 
 func Delete(dir, name string) error {
+	return DeleteWith(OSWriter{}, dir, name)
+}
+
+func DeleteWith(writer Writer, dir, name string) error {
 	name = Slug(name)
 	if name == "" {
 		return syaerr.Usage{Message: "memory key is required"}
 	}
-	err := os.Remove(filepath.Join(dir, name+".md"))
+	if writer == nil {
+		writer = OSWriter{}
+	}
+	err := writer.Remove(filepath.Join(dir, name+".md"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return syaerr.NotFound{ID: name}
@@ -247,31 +247,6 @@ func appendYAMLField(buf *bytes.Buffer, key string, value any) error {
 	return nil
 }
 
-func atomicWriteFile(name string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(name)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, name)
-}
-
 func compact(values []string) []string {
 	if len(values) == 0 {
 		return nil
@@ -287,12 +262,4 @@ func compact(values []string) []string {
 		last = value
 	}
 	return out
-}
-
-var cyrillicSlug = map[rune]string{
-	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
-	'ж': "zh", 'з': "z", 'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m",
-	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
-	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
-	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
 }

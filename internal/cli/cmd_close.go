@@ -12,7 +12,9 @@ func init() {
 		var to string
 		var reason string
 		cmd := app.command("close <id>...", "Close tasks", cobra.MinimumNArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runClose(args, to, reason)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runClose(args, to, reason)
+			})
 		})
 		cmd.Flags().StringVar(&to, "to", "", "explicit terminal status")
 		cmd.Flags().StringVar(&reason, "reason", "", "close reason")
@@ -33,9 +35,6 @@ func (a *App) runClose(ids []string, explicitTo, reason string) (any, error) {
 			hadError = true
 		}
 		results.Results = append(results.Results, result)
-		if result.OK {
-			state, _ = a.loadProject()
-		}
 	}
 	if hadError {
 		if len(results.Results) == 1 && results.Results[0].Err != nil {

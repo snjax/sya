@@ -30,7 +30,9 @@ func init() {
 			} else if len(args) != 0 {
 				return nil, syaerr.Usage{Message: "create --from-file does not accept title args"}
 			}
-			return app.runCreate(opts)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runCreate(opts)
+			})
 		})
 		cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "task type")
 		cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "normal", "priority")
@@ -109,10 +111,6 @@ func (a *App) runCreate(opts createOptions) (any, error) {
 				return nil, err
 			}
 			results.Tasks = append(results.Tasks, result)
-			state, err = a.loadProject()
-			if err != nil {
-				return nil, err
-			}
 		}
 		return results, nil
 	}
@@ -278,6 +276,7 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return CreateResult{}, err
 	}
+	state.Index.Add(t)
 	return CreateResult{ID: id, File: file, Relations: relations}, nil
 }
 

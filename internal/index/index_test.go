@@ -388,6 +388,30 @@ func BenchmarkLoad5k(b *testing.B) {
 	}
 }
 
+func BenchmarkBuildReverseEdgesHighDegree(b *testing.B) {
+	base := highDegreeIndex(2000)
+	b.ResetTimer()
+	for range b.N {
+		idx := cloneIndexForEdgeBenchmark(base)
+		idx.buildReverseEdges()
+		if got := len(idx.reverse["root01"]["blocks"]); got != 2000 {
+			b.Fatalf("reverse edges=%d want 2000", got)
+		}
+	}
+}
+
+func BenchmarkBuildReverseEdgesHighDegreeOldAlgorithm(b *testing.B) {
+	base := highDegreeIndex(2000)
+	b.ResetTimer()
+	for range b.N {
+		idx := cloneIndexForEdgeBenchmark(base)
+		oldBuildReverseEdgesForBenchmark(idx)
+		if got := len(idx.reverse["root01"]["blocks"]); got != 2000 {
+			b.Fatalf("reverse edges=%d want 2000", got)
+		}
+	}
+}
+
 func loadFixture(t testing.TB, files map[string]string) *Index {
 	t.Helper()
 	root := t.TempDir()
@@ -399,6 +423,113 @@ func loadFixture(t testing.TB, files map[string]string) *Index {
 		t.Fatalf("Load: %v", err)
 	}
 	return idx
+}
+
+func highDegreeIndex(edges int) *Index {
+	idx := newIndex(testSchema())
+	root := &task.Task{ID: "root01", Type: "task", Title: "Root", Status: "todo", File: ".sya/tasks/root01.md"}
+	idx.tasks[root.ID] = root
+	idx.order = append(idx.order, root.ID)
+	for n := 0; n < edges; n++ {
+		id := fmt.Sprintf("n%05d", n)
+		t := &task.Task{
+			ID:        id,
+			Type:      "task",
+			Title:     "Node " + id,
+			Status:    "todo",
+			File:      ".sya/tasks/" + id + ".md",
+			Relations: map[string][]string{"depends_on": {"root01"}},
+		}
+		idx.tasks[id] = t
+		idx.order = append(idx.order, id)
+	}
+	return idx
+}
+
+func cloneIndexForEdgeBenchmark(base *Index) *Index {
+	idx := newIndex(base.schema)
+	idx.order = append([]string(nil), base.order...)
+	for id, t := range base.tasks {
+		copyTask := *t
+		if t.Relations != nil {
+			copyTask.Relations = make(map[string][]string, len(t.Relations))
+			for relation, targets := range t.Relations {
+				copyTask.Relations[relation] = append([]string(nil), targets...)
+			}
+		}
+		idx.tasks[id] = &copyTask
+	}
+	return idx
+}
+
+func oldBuildReverseEdgesForBenchmark(i *Index) {
+	i.forward = make(map[string]map[string][]string)
+	i.reverse = make(ReverseEdges)
+	i.edgeOrigins = make(map[CanonicalEdge][]EdgeOrigin)
+	for _, id := range i.order {
+		t := i.tasks[id]
+		if t.Parent != "" {
+			oldAddReverseForBenchmark(i, t.Parent, childrenRelation, t.ID)
+		}
+		for relation := range t.Relations {
+			targets := append([]string(nil), t.Relations[relation]...)
+			sort.Strings(targets)
+			for _, target := range targets {
+				oldAddRelationEdgeForBenchmark(i, t, relation, target)
+			}
+		}
+	}
+}
+
+func oldAddRelationEdgeForBenchmark(i *Index, source *task.Task, relation, target string) {
+	edge, ok := i.canonicalEdge(source.ID, relation, target)
+	if !ok {
+		return
+	}
+	i.edgeOrigins[edge] = append(i.edgeOrigins[edge], EdgeOrigin{
+		Path:     source.File,
+		TaskID:   source.ID,
+		Relation: relation,
+		Target:   target,
+	})
+	oldAddForwardForBenchmark(i, edge.From, edge.Relation, edge.To)
+	relationDef := i.relationDef(edge.Relation)
+	if relationDef.Symmetric {
+		oldAddReverseForBenchmark(i, edge.From, edge.Relation, edge.To)
+		oldAddReverseForBenchmark(i, edge.To, edge.Relation, edge.From)
+		return
+	}
+	if reverse := relationDef.Reverse; reverse != "" {
+		oldAddReverseForBenchmark(i, edge.To, reverse, edge.From)
+	}
+}
+
+func oldAddForwardForBenchmark(i *Index, id, relation, target string) {
+	if id == "" || target == "" {
+		return
+	}
+	if i.forward[id] == nil {
+		i.forward[id] = make(map[string][]string)
+	}
+	if contains(i.forward[id][relation], target) {
+		return
+	}
+	i.forward[id][relation] = append(i.forward[id][relation], target)
+	sort.Strings(i.forward[id][relation])
+}
+
+func oldAddReverseForBenchmark(i *Index, id, relation, target string) {
+	if id == "" || target == "" {
+		return
+	}
+	if i.reverse[id] == nil {
+		i.reverse[id] = make(map[string][]string)
+	}
+	if contains(i.reverse[id][relation], target) {
+		return
+	}
+	i.reverse[id][relation] = append(i.reverse[id][relation], target)
+	sort.Strings(i.reverse[id][relation])
 }
 
 func writeTaskFile(t testing.TB, root, name, contents string) {

@@ -19,7 +19,9 @@ func init() {
 		var opts rememberOptions
 		cmd := app.command("remember \"fact\"", "Store project memory", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			opts.Fact = args[0]
-			return app.runRemember(opts)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runRemember(opts)
+			})
 		})
 		cmd.Flags().StringVar(&opts.Key, "key", "", "memory key")
 		cmd.Flags().Var(&opts.Tasks, "task", "related task id")
@@ -36,7 +38,9 @@ func init() {
 	})
 	registerCommand(func(app *App) *cobra.Command {
 		return app.command("forget <key>", "Delete project memory", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runForget(args[0])
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runForget(args[0])
+			})
 		})
 	})
 }
@@ -138,7 +142,7 @@ func (a *App) runRemember(opts rememberOptions) (RememberResult, error) {
 	}
 	note.Body = appendMemoryBody(note.Body, fact)
 	note.Tasks = mergeMemoryTasks(note.Tasks, taskIDs)
-	if err := memory.Save(filepath.Join(state.Project.SyaDir, "memory"), note); err != nil {
+	if err := memory.SaveWith(memory.OSWriter{}, filepath.Join(state.Project.SyaDir, "memory"), note); err != nil {
 		return RememberResult{}, err
 	}
 	saved, err := memory.Load(os.DirFS(state.Project.Root), ".sya/memory", key)
@@ -177,7 +181,7 @@ func (a *App) runForget(key string) (ForgetResult, error) {
 		return ForgetResult{}, err
 	}
 	name := memory.Slug(key)
-	if err := memory.Delete(filepath.Join(project.SyaDir, "memory"), name); err != nil {
+	if err := memory.DeleteWith(memory.OSWriter{}, filepath.Join(project.SyaDir, "memory"), name); err != nil {
 		return ForgetResult{}, err
 	}
 	return ForgetResult{Name: name}, nil

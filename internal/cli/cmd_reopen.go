@@ -12,7 +12,9 @@ func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var to string
 		cmd := app.command("reopen <id>", "Reopen a terminal task", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runReopen(args[0], to)
+			return app.withProjectMutationLock(func() (any, error) {
+				return app.runReopen(args[0], to)
+			})
 		})
 		cmd.Flags().StringVar(&to, "to", "", "non-terminal status")
 		return cmd
@@ -45,7 +47,9 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 	}
 	from := t.Status
 	t.Status = to
-	appendTransitionLog(t, a.now(), a.Actor(), from, to, string(schema.TransitionSetback), "reopened")
+	if err := appendTransitionLog(t, a.now(), a.Actor(), from, to, string(schema.TransitionSetback), "reopened"); err != nil {
+		return MutationResult{}, err
+	}
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return MutationResult{}, err
 	}

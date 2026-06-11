@@ -3,7 +3,6 @@ package task
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -47,18 +46,6 @@ type frontmatter struct {
 	Archived      bool                `yaml:"archived"`
 }
 
-func Parse(path string) (*Task, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return parse(path, data)
-}
-
-func ParseFile(path string) (*Task, error) {
-	return Parse(path)
-}
-
 func ParseBytes(data []byte) (*Task, error) {
 	return parse("", data)
 }
@@ -81,10 +68,14 @@ func Serialize(t *Task) ([]byte, error) {
 }
 
 func AppendLog(t *Task, actor, line string) error {
+	return AppendLogAt(t, time.Now().UTC(), actor, line)
+}
+
+func AppendLogAt(t *Task, ts time.Time, actor, line string) error {
 	if err := validateSectionName("Log"); err != nil {
 		return err
 	}
-	entry := escapeSectionContent([]byte(fmt.Sprintf("- %s @%s: %s\n", time.Now().UTC().Format(time.RFC3339), actor, line)))
+	entry := logEntry(ts.UTC(), actor, line)
 	idx := sectionIndex(t, "Log")
 	if idx < 0 {
 		return appendSection(t, "Log", entry)
@@ -96,6 +87,39 @@ func AppendLog(t *Task, actor, line string) error {
 	section.Raw = append(section.Raw, entry...)
 	rebuildBodyRaw(t)
 	return nil
+}
+
+func logEntry(ts time.Time, actor, text string) []byte {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "- %s @%s: %s\n", ts.Format(time.RFC3339), logInline(actor), escapeLogTextLine(lines[0]))
+	for _, line := range lines[1:] {
+		buf.WriteString("  ")
+		buf.WriteString(escapeLogTextLine(line))
+		buf.WriteByte('\n')
+	}
+	return buf.Bytes()
+}
+
+func logInline(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", " ")
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\r", " ")
+	text = strings.ReplaceAll(text, "## ", `\## `)
+	return strings.TrimSpace(text)
+}
+
+func escapeLogTextLine(line string) string {
+	if strings.HasPrefix(line, "## ") || hasConflictMarkerPrefix([]byte(line)) {
+		return `\` + line
+	}
+	return line
 }
 
 func EditSection(t *Task, name string, content []byte) error {

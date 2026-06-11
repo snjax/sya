@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/syaerr"
@@ -68,7 +67,12 @@ func (a *App) schemaDocsCommand() *cobra.Command {
 func (a *App) schemaMigrateCommand() *cobra.Command {
 	var opts schemaMigrateOptions
 	cmd := a.command("migrate", "Migrate task files after schema changes", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-		return a.runSchemaMigrate(opts)
+		if opts.DryRun {
+			return a.runSchemaMigrate(opts)
+		}
+		return a.withProjectMutationLock(func() (any, error) {
+			return a.runSchemaMigrate(opts)
+		})
 	})
 	cmd.Flags().StringVar(&opts.RenameStatus, "rename-status", "", "rename status old=new")
 	cmd.Flags().StringVar(&opts.Type, "type", "", "task type")
@@ -276,7 +280,9 @@ func (a *App) runSchemaMigrate(opts schemaMigrateOptions) (SchemaMigrateResult, 
 		}
 		t.Status = newStatus
 		t.SchemaVersion = state.Schema.SchemaVersion
-		appendLogLine(t, fmt.Sprintf("- %s @%s: migrated: status %s->%s", a.now().UTC().Format(time.RFC3339), a.Actor(), oldStatus, newStatus))
+		if err := appendTaskLog(t, a.now(), a.Actor(), fmt.Sprintf("migrated: status %s->%s", oldStatus, newStatus)); err != nil {
+			return SchemaMigrateResult{}, err
+		}
 		if err := writeTask(state.Project.Root, t); err != nil {
 			return SchemaMigrateResult{}, err
 		}

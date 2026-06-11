@@ -16,6 +16,11 @@ func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var opts doctorOptions
 		cmd := app.command("doctor", "Validate sya project state", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
+			if opts.Fix || opts.FixMerge || opts.ReassignID != "" {
+				return app.withProjectMutationLock(func() (any, error) {
+					return app.runDoctor(opts)
+				})
+			}
 			return app.runDoctor(opts)
 		})
 		cmd.Flags().BoolVar(&opts.Strict, "strict", false, "enable strict checks")
@@ -89,6 +94,7 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 	if err != nil {
 		return DoctorResult{}, err
 	}
+	writer := doctor.OSWriter{}
 	var changes []doctor.Change
 	if opts.FixMerge {
 		report, err := doctor.Run(os.DirFS(state.Project.Root), ".sya", state.Schema, state.Index, doctor.Options{Strict: opts.Strict})
@@ -99,7 +105,7 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 			if finding.Kind != "conflict_markers" || !finding.Fixable || finding.Path == "" {
 				continue
 			}
-			fixed, err := doctor.FixMerge(filepath.Join(state.Project.Root, filepath.FromSlash(finding.Path)))
+			fixed, err := doctor.FixMergeWith(writer, filepath.Join(state.Project.Root, filepath.FromSlash(finding.Path)))
 			if err != nil {
 				continue
 			}
@@ -111,7 +117,7 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 		}
 	}
 	if opts.ReassignID != "" {
-		fixed, err := doctor.ReassignIDInDir(state.Project.Root, state.Index, opts.ReassignID)
+		fixed, err := doctor.ReassignIDInDirWith(writer, state.Project.Root, state.Index, opts.ReassignID)
 		if err != nil {
 			return DoctorResult{}, err
 		}
@@ -126,7 +132,7 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 		if err != nil {
 			return DoctorResult{}, err
 		}
-		fixed, err := doctor.FixSafe(state.Project.Root, state.Index, state.Schema, report)
+		fixed, err := doctor.FixSafeWith(writer, state.Project.Root, state.Index, state.Schema, report)
 		if err != nil {
 			return DoctorResult{}, err
 		}

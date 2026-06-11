@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,11 +10,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/goccy/go-yaml"
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
 	"github.com/snjax/sya/internal/schema"
+	"github.com/snjax/sya/internal/slug"
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/snjax/sya/internal/task"
 )
@@ -91,38 +93,13 @@ func defaultTaskType(sch *schema.Schema) string {
 	return "task"
 }
 
-func atomicWriteFile(name string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(name)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, name)
-}
-
 func appendGitignoreRuntime(root string) error {
 	path := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	required := []string{".sya/events.jsonl", ".sya/wisps/"}
+	required := []string{".sya/events.jsonl", ".sya/wisps/", ".sya/.lock"}
 	present := make(map[string]bool, len(required))
 	for _, line := range bytes.Split(data, []byte("\n")) {
 		trimmed := strings.TrimSpace(string(line))
@@ -148,50 +125,11 @@ func appendGitignoreRuntime(root string) error {
 	for _, entry := range missing {
 		out = append(out, []byte(entry+"\n")...)
 	}
-	return atomicWriteFile(path, out, 0o644)
+	return fsutil.AtomicWriteFile(path, out, 0o644)
 }
 
 func slugify(title string) string {
-	var b strings.Builder
-	lastHyphen := false
-	for _, r := range strings.ToLower(title) {
-		if repl, ok := cyrillicSlug[r]; ok {
-			if repl == "" {
-				continue
-			}
-			if b.Len()+len(repl) > 40 {
-				break
-			}
-			b.WriteString(repl)
-			lastHyphen = false
-			continue
-		}
-		switch {
-		case r > unicode.MaxASCII:
-			continue
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastHyphen = false
-		case unicode.IsSpace(r) || r == '-' || r == '_':
-			if b.Len() > 0 && !lastHyphen {
-				b.WriteByte('-')
-				lastHyphen = true
-			}
-		}
-		if b.Len() >= 40 {
-			break
-		}
-	}
-	slug := strings.Trim(b.String(), "-")
-	return slug
-}
-
-var cyrillicSlug = map[rune]string{
-	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
-	'ж': "zh", 'з': "z", 'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m",
-	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
-	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
-	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
+	return slug.Make(title)
 }
 
 func parseKeyValue(raw string) (string, string, error) {
@@ -222,7 +160,28 @@ func writeTask(root string, t *task.Task) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(filepath.Join(root, t.File), data, 0o644)
+	return fsutil.AtomicWriteFile(filepath.Join(root, t.File), data, 0o644)
+}
+
+func (a *App) withProjectMutationLock(fn func() (any, error)) (any, error) {
+	project, err := a.DiscoverProject()
+	if err != nil {
+		return nil, err
+	}
+	var data any
+	err = fsutil.WithProjectLock(project.Root, func() error {
+		var innerErr error
+		data, innerErr = fn()
+		return innerErr
+	})
+	if err != nil {
+		var timeout fsutil.LockTimeout
+		if errors.As(err, &timeout) {
+			return nil, syaerr.ProjectLocked{Path: timeout.Path}
+		}
+		return nil, err
+	}
+	return data, nil
 }
 
 func readAll(r io.Reader) ([]byte, error) {

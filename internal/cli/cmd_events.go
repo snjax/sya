@@ -57,7 +57,7 @@ func (r EventsResult) HumanText(Colorizer) string {
 }
 
 func (a *App) runEvents(opts eventsOptions) (EventsResult, error) {
-	state, err := a.loadProject()
+	project, err := a.DiscoverProject()
 	if err != nil {
 		return EventsResult{}, err
 	}
@@ -68,7 +68,7 @@ func (a *App) runEvents(opts eventsOptions) (EventsResult, error) {
 	if opts.Limit < 0 {
 		return EventsResult{}, syaerr.Usage{Message: "--limit must be non-negative"}
 	}
-	read, err := events.Read(state.Project.Root, events.Filters{
+	read, err := events.Read(project.Root, events.Filters{
 		DeniedOnly: opts.DeniedOnly,
 		Task:       opts.Task,
 		Since:      since,

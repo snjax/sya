@@ -256,21 +256,29 @@ func (r *runner) checkRelationCycle(relation string) {
 }
 
 func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
-	eventsPath := strings.Trim(projectDir, "/") + "/events.jsonl"
-	if _, err := fs.Stat(fsys, eventsPath); err != nil {
-		return
-	}
 	data, err := fs.ReadFile(fsys, ".gitignore")
-	if err == nil && gitignoreContains(data, ".sya/events.jsonl") {
-		return
+	if _, statErr := fs.Stat(fsys, strings.Trim(projectDir, "/")+"/events.jsonl"); statErr == nil {
+		if err != nil || !gitignoreContains(data, ".sya/events.jsonl") {
+			r.add(Finding{
+				Kind:     "events_not_ignored",
+				Severity: SeverityWarning,
+				Path:     ".gitignore",
+				Message:  ".sya/events.jsonl should be ignored; run sya init in new projects or add .sya/events.jsonl to .gitignore",
+				Fixable:  false,
+			})
+		}
 	}
-	r.add(Finding{
-		Kind:     "events_not_ignored",
-		Severity: SeverityWarning,
-		Path:     ".gitignore",
-		Message:  ".sya/events.jsonl should be ignored; run sya init in new projects or add .sya/events.jsonl to .gitignore",
-		Fixable:  false,
-	})
+	if _, statErr := fs.Stat(fsys, strings.Trim(projectDir, "/")+"/.lock"); statErr == nil {
+		if err != nil || !gitignoreContains(data, ".sya/.lock") {
+			r.add(Finding{
+				Kind:     "lock_not_ignored",
+				Severity: SeverityWarning,
+				Path:     ".gitignore",
+				Message:  ".sya/.lock should be ignored; run sya init in new projects or add .sya/.lock to .gitignore",
+				Fixable:  false,
+			})
+		}
+	}
 }
 
 func gitignoreContains(data []byte, entry string) bool {
