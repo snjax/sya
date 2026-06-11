@@ -75,6 +75,7 @@ func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
 	if dir == "" || dir == "." {
 		tasksDir = "tasks"
 	}
+	var taskFiles []string
 
 	err := fs.WalkDir(fsys, tasksDir, func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -90,11 +91,19 @@ func Load(fsys fs.FS, dir string, sch *schema.Schema) (*Index, error) {
 		if entry.IsDir() || path.Ext(filePath) != ".md" {
 			return nil
 		}
-		idx.loadTaskFile(fsys, filePath)
+		taskFiles = append(taskFiles, filePath)
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	sort.Strings(taskFiles)
+	for _, result := range loadTaskFilesParallel(fsys, taskFiles) {
+		if result.quarantine != nil {
+			idx.quarantine = append(idx.quarantine, *result.quarantine)
+			continue
+		}
+		idx.addTask(result.task)
 	}
 
 	idx.rebuildOrder()
@@ -113,17 +122,18 @@ func newIndex(sch *schema.Schema) *Index {
 }
 
 func (i *Index) loadTaskFile(fsys fs.FS, filePath string) {
-	data, err := fs.ReadFile(fsys, filePath)
-	if err != nil {
-		i.quarantine = append(i.quarantine, QuarantinedFile{Path: filePath, Reason: err.Error()})
+	result := loadTaskFile(fsys, filePath)
+	if result.quarantine != nil {
+		i.quarantine = append(i.quarantine, *result.quarantine)
 		return
 	}
-	t, err := task.ParseBytes(data)
-	if err != nil {
-		i.quarantine = append(i.quarantine, QuarantinedFile{Path: filePath, Reason: err.Error()})
+	i.addTask(result.task)
+}
+
+func (i *Index) addTask(t *task.Task) {
+	if t == nil {
 		return
 	}
-	t.File = filePath
 	if existing, ok := i.tasks[t.ID]; ok {
 		i.warnings = append(i.warnings, Warning{
 			Kind:    "duplicate_id",
@@ -133,6 +143,19 @@ func (i *Index) loadTaskFile(fsys fs.FS, filePath string) {
 		return
 	}
 	i.tasks[t.ID] = t
+}
+
+func loadTaskFile(fsys fs.FS, filePath string) taskFileResult {
+	data, err := fs.ReadFile(fsys, filePath)
+	if err != nil {
+		return taskFileResult{path: filePath, quarantine: &QuarantinedFile{Path: filePath, Reason: err.Error()}}
+	}
+	t, err := task.ParseBytes(data)
+	if err != nil {
+		return taskFileResult{path: filePath, quarantine: &QuarantinedFile{Path: filePath, Reason: err.Error()}}
+	}
+	t.File = filePath
+	return taskFileResult{path: filePath, task: t}
 }
 
 func (i *Index) rebuildOrder() {

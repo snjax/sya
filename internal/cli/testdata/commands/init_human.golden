@@ -1,0 +1,5 @@
+code: 0
+stdout:
+Initialized sya project at $ROOT/.sya
+Suggested hook: run `sya doctor` from your pre-commit hook before committing .sya changes.
+stderr:

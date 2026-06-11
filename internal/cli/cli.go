@@ -4,25 +4,29 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/snjax/sya/internal/syaerr"
+	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
 
 type Options struct {
 	Version string
+	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
 	WorkDir string
 	Env     func(string) string
 	GitUser func(context.Context) (string, error)
+	Now     func() time.Time
+	NewID   func(map[string]struct{}, int) (string, error)
 }
 
 type App struct {
@@ -30,22 +34,31 @@ type App struct {
 	quiet    bool
 	actor    string
 	root     *cobra.Command
+	in       io.Reader
 	out      io.Writer
 	err      io.Writer
 	workDir  string
 	env      func(string) string
 	gitUser  func(context.Context) (string, error)
+	now      func() time.Time
+	newID    func(map[string]struct{}, int) (string, error)
 	result   any
 	colorize Colorizer
 }
 
 func New(options Options) *App {
 	app := &App{
+		in:      options.Stdin,
 		out:     options.Stdout,
 		err:     options.Stderr,
 		workDir: options.WorkDir,
 		env:     options.Env,
 		gitUser: options.GitUser,
+		now:     options.Now,
+		newID:   options.NewID,
+	}
+	if app.in == nil {
+		app.in = os.Stdin
 	}
 	if app.out == nil {
 		app.out = io.Discard
@@ -58,6 +71,12 @@ func New(options Options) *App {
 	}
 	if app.gitUser == nil {
 		app.gitUser = gitConfigUserName
+	}
+	if app.now == nil {
+		app.now = func() time.Time { return time.Now().UTC() }
+	}
+	if app.newID == nil {
+		app.newID = task.NewID
 	}
 	app.colorize = NewColorizer(app.env)
 
@@ -73,11 +92,12 @@ func New(options Options) *App {
 	root.PersistentFlags().BoolVar(&app.json, "json", false, "emit JSON envelope")
 	root.PersistentFlags().BoolVar(&app.quiet, "quiet", false, "suppress human-readable diagnostics")
 	root.PersistentFlags().StringVar(&app.actor, "actor", "", "actor name for log entries")
+	root.SetIn(app.in)
 	root.SetOut(app.out)
 	root.SetErr(app.err)
 
 	root.AddCommand(app.versionCommand(options.Version))
-	app.registerStubs(root)
+	registerCommands(app, root)
 
 	app.root = root
 	return app
@@ -101,78 +121,6 @@ func (a *App) Execute(args []string) int {
 func (a *App) versionCommand(version string) *cobra.Command {
 	return a.command("version", "Print version", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 		return Version{Version: version}, nil
-	})
-}
-
-func (a *App) registerStubs(root *cobra.Command) {
-	root.AddCommand(a.stub("init"))
-	root.AddCommand(a.schemaCommand())
-	root.AddCommand(a.stub("create"))
-	root.AddCommand(a.stub("show"))
-	root.AddCommand(a.stub("transitions"))
-	root.AddCommand(a.stub("list"))
-	root.AddCommand(a.stub("board"))
-	root.AddCommand(a.stub("ready"))
-	root.AddCommand(a.stub("blocked"))
-	root.AddCommand(a.stub("move"))
-	root.AddCommand(a.stub("update"))
-	root.AddCommand(a.stub("edit"))
-	root.AddCommand(a.stub("claim"))
-	root.AddCommand(a.stub("close"))
-	root.AddCommand(a.stub("reopen"))
-	root.AddCommand(a.stub("link"))
-	root.AddCommand(a.stub("unlink"))
-	root.AddCommand(a.epicCommand())
-	root.AddCommand(a.stub("comment"))
-	root.AddCommand(a.stub("archive"))
-	root.AddCommand(a.stub("restore"))
-	root.AddCommand(a.stub("search"))
-	root.AddCommand(a.stub("events"))
-	root.AddCommand(a.stub("doctor"))
-	root.AddCommand(a.primeCommand())
-	root.AddCommand(a.stub("remember"))
-	root.AddCommand(a.stub("recall"))
-	root.AddCommand(a.stub("forget"))
-	root.AddCommand(a.wispCommand())
-}
-
-func (a *App) schemaCommand() *cobra.Command {
-	cmd := a.stub("schema")
-	cmd.AddCommand(a.stub("validate"))
-	cmd.AddCommand(a.stub("show"))
-	cmd.AddCommand(a.stub("graph"))
-	cmd.AddCommand(a.stub("docs"))
-	cmd.AddCommand(a.stub("migrate"))
-	return cmd
-}
-
-func (a *App) epicCommand() *cobra.Command {
-	cmd := a.stub("epic")
-	cmd.AddCommand(a.stub("tree"))
-	cmd.AddCommand(a.stub("progress"))
-	return cmd
-}
-
-func (a *App) wispCommand() *cobra.Command {
-	cmd := a.stub("wisp")
-	cmd.AddCommand(a.stub("create"))
-	cmd.AddCommand(a.stub("list"))
-	cmd.AddCommand(a.stub("show"))
-	cmd.AddCommand(a.stub("squash"))
-	cmd.AddCommand(a.stub("burn"))
-	return cmd
-}
-
-func (a *App) primeCommand() *cobra.Command {
-	return a.command("prime", "Print agent context", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-		if _, err := a.DiscoverProject(); err != nil {
-			var notFound syaerr.NotFound
-			if errors.As(err, &notFound) && notFound.ID == ".sya" {
-				return silent, nil
-			}
-			return nil, err
-		}
-		return nil, syaerr.Usage{Message: "not implemented"}
 	})
 }
 

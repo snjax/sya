@@ -12,6 +12,7 @@ var version = "dev"
 func main() {
 	app := cli.New(cli.Options{
 		Version: version,
+		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 	})

@@ -1,0 +1,5 @@
+code: 0
+stdout:
+draft -> spec [ok]
+draft -> scrapped [blocked]
+stderr:

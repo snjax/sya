@@ -1,0 +1,41 @@
+schema_version: 2
+defaults: {type: task}
+relations:
+  depends_on:
+    reverse: blocks
+    graph: dag
+    from: [task, bug]
+    to: [task, bug]
+  discovered_from:
+    reverse: discovered
+  relates:
+    symmetric: true
+types:
+  epic:
+    container: true
+    children: [task, bug, epic]
+    pipeline: [open, active, done]
+    terminal: [done]
+    sections: [Description]
+    transitions:
+      open -> active: {}
+      active -> done: {}
+  task:
+    pipeline: [todo, doing, done]
+    terminal: [done]
+    sections: [Description]
+    fields:
+      ready: {type: bool, default: false}
+      size: {type: enum, values: [small, large]}
+    transitions:
+      todo -> doing: {}
+      doing -> done: {}
+  bug:
+    pipeline: [open, fixed, done]
+    terminal: [done]
+    sections: [Description]
+    fields:
+      severity: {type: enum, values: [minor, major]}
+    transitions:
+      open -> fixed: {}
+      fixed -> done: {}

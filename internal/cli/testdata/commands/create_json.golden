@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"f00001","file":".sya/tasks/f00001-build-api.md","relations":{"depends_on":["e00001"],"discovered_from":["e00001"]}}}
+stderr:

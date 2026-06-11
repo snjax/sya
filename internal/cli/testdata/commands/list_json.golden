@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"tasks":[{"id":"f00001","type":"feature","title":"Build API","status":"draft","priority":"high","parent":"e00001","file":".sya/tasks/f00001-build-api.md"}]}}
+stderr:

@@ -1,0 +1,133 @@
+schema_version: 1
+
+description: >
+  Процесс разработки: Claude — тех-лид (пишет спеки, ревьюит, двигает статусы),
+  Codex — разработчик (реализация, тесты). Тесты обязаны быть зелёными до review.
+  Свободная проза уровня всего процесса — роли, порядок тестирования, конвенции.
+
+defaults:
+  type: task
+
+relations:
+  depends_on:
+    description: "Зависимость по работе: цель должна быть закрыта раньше начала/закрытия источника"
+    reverse: blocks          # вычисляемое обратное имя (алиас на вход в CLI)
+    graph: dag               # запрет циклов
+    blocking: true           # неявный guard, см. §6.2
+  discovered_from:           # провенанс: «найдено при работе над X»
+    reverse: discovered
+    graph: dag
+  relates: {symmetric: true}
+  duplicates: {reverse: duplicated_by}
+  superseded_by:
+    reverse: supersedes
+    from: [decision]         # ограничение концов связи по типам
+    to: [decision]
+  affects:
+    reverse: affected_by
+    from: [decision]         # to: любой (по умолчанию '*')
+
+types:
+  epic:
+    container: true
+    children: [feature, bug, docs, task]
+    pipeline: [open, active, done, scrapped]
+    terminal: [done, scrapped]
+    working: [active]
+    transitions:
+      open -> active: {}
+      active -> done:
+        guards:
+          - kind: children_status
+            in: [terminal]
+            message: "У эпика есть незакрытые дети"
+      "* -> scrapped": {}
+
+  feature:                   # тип с полным комплектом описаний (рекомендуемый стиль sya-board)
+    description: "Пользовательская функциональность: через спеку и ревью, impl не начинается без утверждённой спеки"
+    pipeline: [draft, spec, impl, review, done, scrapped]
+    statuses:                # описания kanban-колонок (опционально для движка)
+      draft: "Идея зафиксирована, требования не созрели"
+      spec: "Пишется и ревьюится спецификация"
+      impl: "Реализация в работе"
+      review: "Код-ревью + проверка acceptance-критериев"
+      done: "Смержено и проверено"
+      scrapped: "Отменено, причина в Log"
+    terminal: [done, scrapped]
+    working: [impl, review]
+    sections: [Description, Design, Acceptance]
+    fields:
+      spec_approved: {type: bool, default: false, description: "Спека утверждена тех-лидом"}
+    transitions:
+      draft -> spec:
+        description: "Требования созрели — пишем спецификацию"
+      spec -> impl:
+        description: "Спека утверждена — начинаем реализацию"
+        guards:
+          - kind: field
+            field: spec_approved
+            equals: true
+            message: "Спека не утверждена (fields.spec_approved)"
+            hint: "После ревью спеки: sya update <id> --field spec_approved=true"
+          - kind: section_nonempty
+            section: Design
+            message: "Секция Design пуста"
+            hint: "sya edit <id> --section Design"
+      impl -> review:
+        description: "Реализация готова, тесты зелёные — на ревью"
+      review -> impl:                  # backtrack
+        kind: setback
+        description: "Ревью провалено: дефекты — возврат в реализацию, причина в Log"
+        ignore_blocking: [depends_on]  # явный opt-out неявного guard'а
+      review -> done:
+        description: "Ревью пройдено, acceptance выполнен"
+      "* -> scrapped": {}              # wildcard: kind=setback по умолчанию
+
+  bug:
+    pipeline: [open, triage, impl, verify, done, scrapped]
+    terminal: [done, scrapped]
+    working: [impl, verify]
+    fields:
+      severity: {type: enum, values: [critical, major, minor], default: major}
+    transitions:
+      open -> triage: {}
+      triage -> impl: {}
+      impl -> verify: {}
+      verify -> impl:
+        kind: setback
+        description: "Фикс не подтвердился — возврат в работу"
+        ignore_blocking: [depends_on]
+      verify -> done: {}
+      "* -> scrapped": {}
+
+  docs:
+    pipeline: [todo, writing, done]
+    terminal: [done]
+    working: [writing]
+    transitions:
+      todo -> writing: {}
+      writing -> done: {}
+
+  decision:                  # ADR как первоклассный тип
+    pipeline: [proposed, accepted, superseded, rejected]
+    terminal: [superseded, rejected]
+    parked: [accepted]       # валидное долгоживущее состояние, не очередь
+    sections: [Description]
+    transitions:
+      proposed -> accepted: {}
+      proposed -> rejected: {}
+      accepted -> superseded:
+        guards:
+          - kind: relation_exists
+            relation: superseded_by
+            message: "Сначала свяжите новое решение через superseded_by"
+
+  task:
+    pipeline: [todo, in_progress, done, scrapped]
+    terminal: [done, scrapped]
+    working: [in_progress]
+    transitions:
+      todo -> in_progress: {}
+      in_progress -> done: {}
+      in_progress -> todo: {}
+      "* -> scrapped": {}
