@@ -1,5 +1,12 @@
 package schema
 
+import (
+	"fmt"
+	"strings"
+
+	"github.com/goccy/go-yaml"
+)
+
 type Schema struct {
 	SchemaVersion int                    `json:"schema_version" yaml:"schema_version"`
 	Description   string                 `json:"description,omitempty" yaml:"description,omitempty"`
@@ -83,4 +90,137 @@ func New() *Schema {
 		Relations: make(map[string]RelationDef),
 		Types:     make(map[string]TypeDef),
 	}
+}
+
+func Parse(data []byte) (*Schema, error) {
+	var schema Schema
+	if err := yaml.UnmarshalWithOptions(data, &schema, yaml.Strict()); err != nil {
+		return nil, err
+	}
+	if schema.Relations == nil {
+		schema.Relations = make(map[string]RelationDef)
+	}
+	if schema.Types == nil {
+		schema.Types = make(map[string]TypeDef)
+	}
+	if err := schema.normalize(); err != nil {
+		return nil, err
+	}
+	return &schema, nil
+}
+
+func (s *Schema) normalize() error {
+	for name, relation := range s.Relations {
+		if len(relation.From) == 0 {
+			relation.From = []string{"*"}
+		}
+		if len(relation.To) == 0 {
+			relation.To = []string{"*"}
+		}
+		s.Relations[name] = relation
+	}
+	for typeName, typeDef := range s.Types {
+		if typeDef.Board == nil {
+			board := true
+			typeDef.Board = &board
+		}
+		if typeDef.Statuses == nil {
+			typeDef.Statuses = make(map[string]string)
+		}
+		if typeDef.Fields == nil {
+			typeDef.Fields = make(map[string]FieldDef)
+		}
+		normalized, err := normalizeTransitions(typeName, typeDef.Transitions)
+		if err != nil {
+			return err
+		}
+		typeDef.Transitions = normalized
+		s.Types[typeName] = typeDef
+	}
+	return nil
+}
+
+func normalizeTransitions(typeName string, transitions map[string]Transition) (map[string]Transition, error) {
+	if transitions == nil {
+		return nil, nil
+	}
+	normalized := make(map[string]Transition, len(transitions))
+	for key, transition := range transitions {
+		from, to, err := parseTransitionKey(key)
+		if err != nil {
+			return nil, fmt.Errorf("types.%s.transitions.%q: %w", typeName, key, err)
+		}
+		transition.From = from
+		transition.To = to
+		if transition.Kind == "" {
+			if from == "*" {
+				transition.Kind = TransitionSetback
+			} else {
+				transition.Kind = TransitionAdvance
+			}
+		}
+		normalized[transitionKey(from, to)] = transition
+	}
+	return normalized, nil
+}
+
+func parseTransitionKey(key string) (string, string, error) {
+	parts := strings.Split(key, "->")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("transition key must have form %q", "from -> to")
+	}
+	from := strings.TrimSpace(parts[0])
+	to := strings.TrimSpace(parts[1])
+	if from == "" || to == "" {
+		return "", "", fmt.Errorf("transition endpoints must be non-empty")
+	}
+	if to == "*" {
+		return "", "", fmt.Errorf("wildcard is allowed only on the left side")
+	}
+	return from, to, nil
+}
+
+func transitionKey(from, to string) string {
+	return from + " -> " + to
+}
+
+type guardYAML struct {
+	Kind     GuardKind `yaml:"kind"`
+	Relation string    `yaml:"relation,omitempty"`
+	In       []string  `yaml:"in,omitempty"`
+	Field    string    `yaml:"field,omitempty"`
+	Equals   any       `yaml:"equals,omitempty"`
+	Section  string    `yaml:"section,omitempty"`
+	Message  string    `yaml:"message,omitempty"`
+	Hint     string    `yaml:"hint,omitempty"`
+}
+
+func (g *Guard) UnmarshalYAML(unmarshal func(any) error) error {
+	var raw guardYAML
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	g.Kind = raw.Kind
+	g.Message = raw.Message
+	g.Hint = raw.Hint
+	params := make(map[string]any)
+	if raw.Relation != "" {
+		params["relation"] = raw.Relation
+	}
+	if raw.In != nil {
+		params["in"] = raw.In
+	}
+	if raw.Field != "" {
+		params["field"] = raw.Field
+	}
+	if raw.Equals != nil {
+		params["equals"] = raw.Equals
+	}
+	if raw.Section != "" {
+		params["section"] = raw.Section
+	}
+	if len(params) > 0 {
+		g.Params = params
+	}
+	return nil
 }
