@@ -1,0 +1,11 @@
+# local product requirements draft (not published)
+PRD.md
+
+# build artifacts
+/bin/
+/dist/
+
+# editor/tooling
+.idea/
+.vscode/
+*.swp
