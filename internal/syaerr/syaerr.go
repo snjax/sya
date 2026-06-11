@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -59,13 +60,27 @@ func (e Ambiguous) Type() string  { return "ambiguous" }
 func (e Ambiguous) ExitCode() int { return ExitLookup }
 
 type TransitionNotAllowed struct {
-	Task    string             `json:"task"`
-	From    string             `json:"from"`
-	To      string             `json:"to"`
-	Allowed []TransitionOption `json:"allowed"`
+	Task     string             `json:"task"`
+	TaskType string             `json:"type,omitempty"`
+	From     string             `json:"from"`
+	To       string             `json:"to"`
+	Allowed  []TransitionOption `json:"allowed"`
 }
 
-func (e TransitionNotAllowed) Error() string { return "transition not allowed" }
+func (e TransitionNotAllowed) Error() string {
+	taskType := e.TaskType
+	if taskType == "" {
+		taskType = "task"
+	}
+	message := fmt.Sprintf("unknown or unreachable status %q for %s", e.To, taskType)
+	if e.From != "" {
+		message += fmt.Sprintf("; allowed from %s", e.From)
+	}
+	if allowed := formatTransitionOptions(e.Allowed); allowed != "" {
+		message += ": " + allowed
+	}
+	return message
+}
 func (e TransitionNotAllowed) Type() string  { return "transition_not_allowed" }
 func (e TransitionNotAllowed) ExitCode() int { return ExitTransitionRejected }
 
@@ -122,6 +137,8 @@ type TransitionOption struct {
 	To          string `json:"to"`
 	Kind        string `json:"kind,omitempty"`
 	Description string `json:"description,omitempty"`
+	Working     bool   `json:"working,omitempty"`
+	Terminal    bool   `json:"terminal,omitempty"`
 }
 
 type Violation struct {
@@ -194,6 +211,7 @@ func Payload(err error) ErrorPayload {
 		payload.Candidates = ambiguous.Candidates
 	case errors.As(err, &notAllowed):
 		payload.Task = notAllowed.Task
+		payload.TaskType = notAllowed.TaskType
 		payload.From = notAllowed.From
 		payload.To = notAllowed.To
 		payload.Allowed = notAllowed.Allowed
@@ -262,6 +280,7 @@ type ErrorPayload struct {
 	Path         string             `json:"path,omitempty"`
 	Candidates   []Candidate        `json:"candidates,omitempty"`
 	Task         string             `json:"task,omitempty"`
+	TaskType     string             `json:"task_type,omitempty"`
 	Assignee     string             `json:"assignee,omitempty"`
 	From         string             `json:"from,omitempty"`
 	To           string             `json:"to,omitempty"`
@@ -269,6 +288,24 @@ type ErrorPayload struct {
 	Violations   []Violation        `json:"violations,omitempty"`
 	Alternatives []TransitionOption `json:"alternatives,omitempty"`
 	Allowed      []TransitionOption `json:"allowed,omitempty"`
+}
+
+func formatTransitionOptions(options []TransitionOption) string {
+	if len(options) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(options))
+	for _, option := range options {
+		status := option.To
+		if option.Working {
+			status += "*"
+		}
+		if option.Terminal {
+			status += "!"
+		}
+		parts = append(parts, status)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func MarshalEnvelope(envelope Envelope) ([]byte, error) {

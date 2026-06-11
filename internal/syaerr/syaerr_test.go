@@ -23,12 +23,13 @@ func TestErrorEnvelopeGoldens(t *testing.T) {
 			},
 		},
 		"transition_not_allowed": TransitionNotAllowed{
-			Task: "a3f8c1",
-			From: "draft",
-			To:   "done",
+			Task:     "a3f8c1",
+			TaskType: "feature",
+			From:     "draft",
+			To:       "done",
 			Allowed: []TransitionOption{
 				{To: "spec", Kind: "advance", Description: "Requirements are ready for specification"},
-				{To: "scrapped", Kind: "setback", Description: "Task was cancelled with rationale in Log"},
+				{To: "scrapped", Kind: "setback", Description: "Task was cancelled with rationale in Log", Terminal: true},
 			},
 		},
 		"transition_blocked": TransitionBlocked{

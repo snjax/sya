@@ -80,6 +80,7 @@ func allowedOptions(sch *schema.Schema, resolver schema.Resolver, t *task.Task) 
 	if !ok {
 		return nil
 	}
+	typeDef := sch.Types[t.Type]
 	statuses := schema.AvailableTransitions(sch, resolver, view)
 	options := make([]syaerr.TransitionOption, 0, len(statuses))
 	for _, status := range statuses {
@@ -87,6 +88,8 @@ func allowedOptions(sch *schema.Schema, resolver schema.Resolver, t *task.Task) 
 			To:          status.Transition.To,
 			Kind:        string(status.Transition.Kind),
 			Description: status.Transition.Description,
+			Working:     stringIn(typeDef.Working, status.Transition.To),
+			Terminal:    stringIn(typeDef.Terminal, status.Transition.To),
 		})
 	}
 	return options
@@ -98,6 +101,7 @@ func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.T
 		return nil
 	}
 	statuses := schema.AvailableTransitions(sch, resolver, view)
+	typeDef := sch.Types[t.Type]
 	options := make([]syaerr.TransitionOption, 0, len(statuses))
 	for _, status := range statuses {
 		if !status.Passing || status.Transition.To == excludeTo {
@@ -107,6 +111,8 @@ func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.T
 			To:          status.Transition.To,
 			Kind:        string(status.Transition.Kind),
 			Description: status.Transition.Description,
+			Working:     stringIn(typeDef.Working, status.Transition.To),
+			Terminal:    stringIn(typeDef.Terminal, status.Transition.To),
 		})
 	}
 	return options

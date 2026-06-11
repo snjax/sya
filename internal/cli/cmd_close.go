@@ -82,6 +82,6 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 		}
 		return a.transitionOK(state, t, from, target, true)
 	}
-	err = syaerr.TransitionNotAllowed{Task: t.ID, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
+	err = syaerr.TransitionNotAllowed{Task: t.ID, TaskType: t.Type, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
 	return a.transitionDenied(state, t, "terminal", err)
 }

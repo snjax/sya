@@ -52,6 +52,37 @@ func TestEventsCommandRecordsOKAndDeniedTransitions(t *testing.T) {
 	}
 }
 
+func TestDeniedEventErrorTypes(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Blocked")
+	createSeedTask(t, root, "b00001", "Dependency")
+	mustRun(t, root, nil, []string{"link", "a00001", "depends_on", "b00001"})
+	_, _, blockedCode := runCLI(t, root, nil, nil, []string{"move", "a00001", "in_progress"})
+	if blockedCode != syaerr.ExitTransitionRejected {
+		t.Fatalf("blocked move code=%d", blockedCode)
+	}
+	_, _, notAllowedCode := runCLI(t, root, nil, nil, []string{"move", "a00001", "working"})
+	if notAllowedCode != syaerr.ExitTransitionRejected {
+		t.Fatalf("not allowed move code=%d", notAllowedCode)
+	}
+	read, err := events.Read(root, events.Filters{DeniedOnly: true, Task: "a00001"})
+	if err != nil {
+		t.Fatalf("read events: %v", err)
+	}
+	if len(read) != 2 {
+		t.Fatalf("events=%#v", read)
+	}
+	if read[0].ErrorType != "transition_blocked" {
+		t.Fatalf("blocked error_type=%q", read[0].ErrorType)
+	}
+	if read[1].ErrorType != "transition_not_allowed" {
+		t.Fatalf("not allowed error_type=%q", read[1].ErrorType)
+	}
+}
+
 func TestDeniedTransitionAlertHookReceivesJSON(t *testing.T) {
 	t.Parallel()
 

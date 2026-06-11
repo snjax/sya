@@ -66,6 +66,7 @@ func (r PrimeResult) HumanText(Colorizer) string {
 		fmt.Fprintf(&b, " (%s)", r.Project.Prefix)
 	}
 	b.WriteString("\n\nschema:\n")
+	b.WriteString("(* = working/in-progress, ! = terminal)\n")
 	for _, typ := range r.Schema.Types {
 		fmt.Fprintf(&b, "- %s", typ.Name)
 		if typ.Description != "" {

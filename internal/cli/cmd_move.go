@@ -58,10 +58,11 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 	}
 	if !ok {
 		err := syaerr.TransitionNotAllowed{
-			Task:    t.ID,
-			From:    t.Status,
-			To:      status,
-			Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t),
+			Task:     t.ID,
+			TaskType: t.Type,
+			From:     t.Status,
+			To:       status,
+			Allowed:  allowedOptions(state.Schema, state.Index.Resolver(), t),
 		}
 		if write {
 			return a.transitionDenied(state, t, status, err)

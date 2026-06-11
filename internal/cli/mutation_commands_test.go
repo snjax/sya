@@ -165,6 +165,26 @@ func TestMutationErrorPaths(t *testing.T) {
 			wantText: "transition_blocked",
 		},
 		{
+			name: "move unknown status human lists allowed",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+			},
+			args:     []string{"move", "f00001", "working"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: `unknown or unreachable status "working" for feature; allowed from draft: spec, scrapped!`,
+		},
+		{
+			name: "move unknown status json allowed targets",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+			},
+			args:     []string{"--json", "move", "f00001", "working"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: `"allowed":[{"to":"spec","kind":"advance","description":"Требования созрели — пишем спецификацию"},{"to":"scrapped","kind":"setback","terminal":true}]`,
+		},
+		{
 			name: "move offending includes task detail",
 			setup: func(t *testing.T, root string) {
 				initProject(t, root)

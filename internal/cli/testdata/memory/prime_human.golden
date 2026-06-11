@@ -3,6 +3,7 @@ stdout:
 project: fixture (sya)
 
 schema:
+(* = working/in-progress, ! = terminal)
 - bug | open -> triage -> impl* -> verify* -> done! -> scrapped!
 - decision | proposed -> accepted -> superseded! -> rejected!
 - docs | todo -> writing* -> done!

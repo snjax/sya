@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Test
+        run: go test ./... -count=1 -timeout 300s
+
+  fuzz-smoke:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+          cache: true
+
+      - name: Run fuzz targets within 60s budget
+        run: |
+          set -euo pipefail
+          targets=(
+            "./internal/task FuzzEditSection"
+            "./internal/task FuzzAppendLog"
+            "./internal/task FuzzResolvePrefix"
+            "./internal/task FuzzParse"
+            "./internal/index FuzzResolve"
+            "./internal/schema FuzzParseSchema"
+            "./internal/schema FuzzTransitionKey"
+            "./internal/cli FuzzSlug"
+            "./internal/cli FuzzDocsRender"
+          )
+          start="$(date +%s)"
+          for target in "${targets[@]}"; do
+            pkg="${target% *}"
+            fuzz="${target#* }"
+            elapsed="$(( $(date +%s) - start ))"
+            remaining="$(( 60 - elapsed ))"
+            if [ "${remaining}" -le 0 ]; then
+              echo "fuzz smoke budget exhausted before ${pkg}/${fuzz}"
+              exit 124
+            fi
+            timeout "${remaining}s" go test "${pkg}" -run '^$' -fuzz "^${fuzz}$" -fuzztime 5s
+          done
