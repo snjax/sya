@@ -270,6 +270,11 @@ func FuzzParse(f *testing.F) {
 	}
 	f.Add([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\n---\n## Description\nbody\n"))
 	f.Add([]byte("not frontmatter"))
+	f.Add(fuzzParseCrasher60969d9411a56c08())
+	f.Add([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\nlabels: [[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]\n---\n"))
+	f.Add([]byte("---\nid: aaaaaa\ntype: task\nstatus: todo\nlabels: scalar-not-array\n---\n"))
+	f.Add([]byte("---\nid: &id aaaaaa\ntype: *id\nstatus: todo\nrelations: &rels {depends_on: [bbbbbb]}\nfields: {copy: *rels}\n---\n"))
+	f.Add([]byte("---\nid: aaaaaa\ntype: task\nstatus: \"--- inside value\"\nlabels: !0000000000000000000 000\n---\n"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		parsed, err := ParseBytes(data)
@@ -292,6 +297,15 @@ func FuzzParse(f *testing.F) {
 			t.Fatalf("second serialize changed output")
 		}
 	})
+}
+
+func fuzzParseCrasher60969d9411a56c08() []byte {
+	return []byte("---\n" +
+		"type: 00\n" +
+		"id: 000080\n" +
+		"status: \"\xae\xbd\xba\xbe \xb8 \xbf\x80\x8f\xbe\xba  00\x87\xb5\xb9\"\n" +
+		"labels: !0000000000000000000 000\n" +
+		"---")
 }
 
 func readTestdata(tb testing.TB, name string) []byte {

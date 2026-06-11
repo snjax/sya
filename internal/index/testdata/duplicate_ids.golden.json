@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    "dup001"
+  ],
+  "warnings": [
+    {
+      "kind": "duplicate_id",
+      "message": "duplicate task id \"dup001\"",
+      "paths": [
+        ".sya/tasks/a-first.md",
+        ".sya/tasks/b-second.md"
+      ]
+    }
+  ]
+}

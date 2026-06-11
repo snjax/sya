@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    "a00001"
+  ],
+  "quarantine": [
+    {
+      "path": ".sya/tasks/bad-frontmatter.md",
+      "reason": "missing required field id"
+    },
+    {
+      "path": ".sya/tasks/conflict.md",
+      "reason": "conflict markers found"
+    }
+  ]
+}

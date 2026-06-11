@@ -313,6 +313,10 @@ func FuzzParseSchema(f *testing.F) {
 		"schema_version: 1\n",
 		"types:\n  task:\n    transitions:\n      \"* -> done\": {}\n",
 		"not: [valid",
+		"schema_version: 1\ntypes: [[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]\n",
+		"schema_version: 1\ntypes:\n  task:\n    pipeline: todo\n",
+		"schema_version: &v 1\ndefaults: {type: task}\ntypes: &types {task: {pipeline: [todo], terminal: [todo]}}\nrelations: {relates: {from: *types}}\n",
+		"schema_version: 1\ndescription: \"--- inside value\"\ntypes: !0000000000000000000 000\n",
 	} {
 		f.Add(seed)
 	}

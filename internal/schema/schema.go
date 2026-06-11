@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/snjax/sya/internal/syaerr"
 )
 
 type Schema struct {
@@ -94,7 +95,7 @@ func New() *Schema {
 
 func Parse(data []byte) (*Schema, error) {
 	var schema Schema
-	if err := yaml.UnmarshalWithOptions(data, &schema, yaml.Strict()); err != nil {
+	if err := unmarshalSchema(data, &schema); err != nil {
 		return nil, err
 	}
 	if schema.Relations == nil {
@@ -107,6 +108,18 @@ func Parse(data []byte) (*Schema, error) {
 		return nil, err
 	}
 	return &schema, nil
+}
+
+func unmarshalSchema(data []byte, out *Schema) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = syaerr.SchemaInvalid{Message: fmt.Sprintf("malformed schema: %v", recovered)}
+		}
+	}()
+	if err := yaml.UnmarshalWithOptions(data, out, yaml.Strict()); err != nil {
+		return syaerr.SchemaInvalid{Message: err.Error()}
+	}
+	return nil
 }
 
 func (s *Schema) normalize() error {

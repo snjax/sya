@@ -127,7 +127,7 @@ func parse(path string, data []byte) (*Task, error) {
 	}
 
 	var fm frontmatter
-	if err := yaml.UnmarshalWithOptions(yml, &fm, yaml.DisallowUnknownField()); err != nil {
+	if err := unmarshalFrontmatter(yml, &fm); err != nil {
 		return nil, schemaInvalid(path, err.Error())
 	}
 	if fm.ID == "" {
@@ -165,6 +165,15 @@ func parse(path string, data []byte) (*Task, error) {
 		t.Fields = make(map[string]any)
 	}
 	return t, nil
+}
+
+func unmarshalFrontmatter(data []byte, out *frontmatter) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("malformed frontmatter: %v", recovered)
+		}
+	}()
+	return yaml.UnmarshalWithOptions(data, out, yaml.DisallowUnknownField())
 }
 
 func splitFrontmatter(data []byte) ([]byte, []byte, error) {

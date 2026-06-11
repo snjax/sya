@@ -1,0 +1,79 @@
+{
+  "tasks": [
+    "a00001",
+    "b00001",
+    "c00001",
+    "d00001"
+  ],
+  "reverse": {
+    "a00001": {
+      "relates": [
+        "b00001"
+      ]
+    },
+    "b00001": {
+      "relates": [
+        "a00001"
+      ]
+    },
+    "c00001": {
+      "blocks": [
+        "d00001"
+      ]
+    }
+  },
+  "warnings": [
+    {
+      "kind": "duplicate_edge",
+      "message": "duplicate canonical edge a00001 relates b00001",
+      "paths": [
+        ".sya/tasks/a.md",
+        ".sya/tasks/b.md"
+      ],
+      "edge": {
+        "from": "a00001",
+        "relation": "relates",
+        "to": "b00001"
+      }
+    },
+    {
+      "kind": "duplicate_edge",
+      "message": "duplicate canonical edge d00001 depends_on c00001",
+      "paths": [
+        ".sya/tasks/c.md",
+        ".sya/tasks/d.md"
+      ],
+      "edge": {
+        "from": "d00001",
+        "relation": "depends_on",
+        "to": "c00001"
+      }
+    }
+  ],
+  "origins": [
+    {
+      "from": "a00001",
+      "relation": "relates",
+      "to": "b00001"
+    },
+    {
+      "from": "d00001",
+      "relation": "depends_on",
+      "to": "c00001"
+    }
+  ],
+  "related": {
+    "a00001.relates": [
+      "b00001"
+    ],
+    "b00001.relates": [
+      "a00001"
+    ],
+    "c00001.blocks": [
+      "d00001"
+    ],
+    "d00001.depends_on": [
+      "c00001"
+    ]
+  }
+}
