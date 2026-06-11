@@ -1,0 +1,1 @@
+{"ok":false,"error":{"type":"transition_not_allowed","message":"transition not allowed","task":"a3f8c1","from":"draft","to":"done","allowed":[{"to":"spec","kind":"advance","description":"Requirements are ready for specification"},{"to":"scrapped","kind":"setback","description":"Task was cancelled with rationale in Log"}]}}

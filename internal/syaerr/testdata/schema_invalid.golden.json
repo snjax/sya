@@ -1,0 +1,1 @@
+{"ok":false,"error":{"type":"schema_invalid","message":"schema validation failed","violations":[{"kind":"schema","file":".sya/schema.yml","message":"types.feature.terminal is required","hint":"Add at least one terminal status"}]}}

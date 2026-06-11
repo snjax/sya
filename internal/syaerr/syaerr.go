@@ -2,9 +2,8 @@ package syaerr
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-
-	"github.com/snjax/sya/internal/task"
 )
 
 const (
@@ -38,8 +37,8 @@ func (e NotFound) Type() string  { return "not_found" }
 func (e NotFound) ExitCode() int { return ExitLookup }
 
 type Ambiguous struct {
-	Prefix     string         `json:"prefix"`
-	Candidates []task.Summary `json:"candidates"`
+	Prefix     string      `json:"prefix"`
+	Candidates []Candidate `json:"candidates"`
 }
 
 func (e Ambiguous) Error() string { return fmt.Sprintf("ambiguous prefix: %s", e.Prefix) }
@@ -77,6 +76,19 @@ func (e SchemaInvalid) Error() string { return e.Message }
 func (e SchemaInvalid) Type() string  { return "schema_invalid" }
 func (e SchemaInvalid) ExitCode() int { return ExitSchemaInvalid }
 
+type ErrConflictMarkers struct {
+	Path string `json:"path,omitempty"`
+}
+
+func (e ErrConflictMarkers) Error() string {
+	if e.Path == "" {
+		return "conflict markers found"
+	}
+	return fmt.Sprintf("%s: conflict markers found", e.Path)
+}
+func (e ErrConflictMarkers) Type() string  { return "conflict_markers" }
+func (e ErrConflictMarkers) ExitCode() int { return ExitSchemaInvalid }
+
 type TransitionRef struct {
 	From        string `json:"from,omitempty"`
 	To          string `json:"to,omitempty"`
@@ -91,14 +103,22 @@ type TransitionOption struct {
 }
 
 type Violation struct {
-	Kind      string         `json:"kind"`
-	Field     string         `json:"field,omitempty"`
-	Relation  string         `json:"relation,omitempty"`
-	Section   string         `json:"section,omitempty"`
-	File      string         `json:"file,omitempty"`
-	Message   string         `json:"message"`
-	Hint      string         `json:"hint,omitempty"`
-	Offending []task.Summary `json:"offending,omitempty"`
+	Kind      string      `json:"kind"`
+	Field     string      `json:"field,omitempty"`
+	Relation  string      `json:"relation,omitempty"`
+	Section   string      `json:"section,omitempty"`
+	File      string      `json:"file,omitempty"`
+	Message   string      `json:"message"`
+	Hint      string      `json:"hint,omitempty"`
+	Offending []Candidate `json:"offending,omitempty"`
+}
+
+type Candidate struct {
+	ID     string `json:"id"`
+	Title  string `json:"title,omitempty"`
+	Type   string `json:"type,omitempty"`
+	Status string `json:"status,omitempty"`
+	File   string `json:"file,omitempty"`
 }
 
 type Envelope struct {
@@ -119,7 +139,8 @@ func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
 	}
-	if coded, ok := err.(interface{ ExitCode() int }); ok {
+	var coded Coded
+	if errors.As(err, &coded) {
 		return coded.ExitCode()
 	}
 	return ExitUsage
@@ -127,33 +148,80 @@ func ExitCode(err error) int {
 
 func Payload(err error) ErrorPayload {
 	payload := ErrorPayload{
-		Type:    "usage",
+		Type:    "internal",
 		Message: err.Error(),
 	}
-	if coded, ok := err.(Coded); ok {
+	var coded Coded
+	if errors.As(err, &coded) {
 		payload.Type = coded.Type()
+	}
+	var notFound NotFound
+	var ambiguous Ambiguous
+	var notAllowed TransitionNotAllowed
+	var blocked TransitionBlocked
+	var schemaInvalid SchemaInvalid
+	var conflictMarkers ErrConflictMarkers
+	var usage Usage
+	switch {
+	case errors.As(err, &notFound):
+		payload.ID = notFound.ID
+	case errors.As(err, &ambiguous):
+		payload.Prefix = ambiguous.Prefix
+		payload.Candidates = ambiguous.Candidates
+	case errors.As(err, &notAllowed):
+		payload.Task = notAllowed.Task
+		payload.From = notAllowed.From
+		payload.To = notAllowed.To
+		payload.Allowed = notAllowed.Allowed
+	case errors.As(err, &blocked):
+		payload.Task = blocked.Task
+		payload.Transition = &blocked.Transition
+		payload.Violations = blocked.Violations
+		payload.Alternatives = blocked.Alternatives
+	case errors.As(err, &schemaInvalid):
+		payload.Violations = schemaInvalid.Violations
+	case errors.As(err, &conflictMarkers):
+		payload.Path = conflictMarkers.Path
+	case errors.As(err, &usage):
+	}
+	return payload
+}
+
+func AsCoded(err error) (Coded, bool) {
+	var coded Coded
+	if errors.As(err, &coded) {
+		return coded, true
+	}
+	return nil, false
+}
+
+func ErrorType(err error) string {
+	if coded, ok := AsCoded(err); ok {
+		return coded.Type()
+	}
+	return "internal"
+}
+
+func ErrorMessage(err error) string {
+	if err == nil {
+		return ""
 	}
 	switch e := err.(type) {
 	case NotFound:
-		payload.ID = e.ID
+		return e.Error()
 	case Ambiguous:
-		payload.Prefix = e.Prefix
-		payload.Candidates = e.Candidates
+		return e.Error()
 	case TransitionNotAllowed:
-		payload.Task = e.Task
-		payload.From = e.From
-		payload.To = e.To
-		payload.Allowed = e.Allowed
+		return e.Error()
 	case TransitionBlocked:
-		payload.Task = e.Task
-		payload.Transition = &e.Transition
-		payload.Violations = e.Violations
-		payload.Alternatives = e.Alternatives
+		return e.Error()
 	case SchemaInvalid:
-		payload.Violations = e.Violations
+		return e.Error()
 	case Usage:
+		return e.Error()
+	default:
+		return err.Error()
 	}
-	return payload
 }
 
 type ErrorPayload struct {
@@ -161,7 +229,8 @@ type ErrorPayload struct {
 	Message      string             `json:"message,omitempty"`
 	ID           string             `json:"id,omitempty"`
 	Prefix       string             `json:"prefix,omitempty"`
-	Candidates   []task.Summary     `json:"candidates,omitempty"`
+	Path         string             `json:"path,omitempty"`
+	Candidates   []Candidate        `json:"candidates,omitempty"`
 	Task         string             `json:"task,omitempty"`
 	From         string             `json:"from,omitempty"`
 	To           string             `json:"to,omitempty"`

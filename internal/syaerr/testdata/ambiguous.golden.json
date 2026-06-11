@@ -1,0 +1,1 @@
+{"ok":false,"error":{"type":"ambiguous","message":"ambiguous prefix: a3","prefix":"a3","candidates":[{"id":"a3f8c1","title":"Streaming responses","type":"feature","status":"impl","file":".sya/tasks/a3f8c1-streaming-responses.md"},{"id":"a3b771","title":"Retry transport","type":"bug","status":"todo","file":".sya/tasks/a3b771-retry-transport.md"}]}}
