@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"c00001","file":".sya/tasks/c00001-claim-me.md","from":"todo","to":"in_progress","status":"in_progress","ok":true}}
+stderr:

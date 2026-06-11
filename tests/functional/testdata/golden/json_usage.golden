@@ -1,0 +1,4 @@
+code: 1
+stdout:
+{"ok":false,"error":{"type":"usage","message":"create requires exactly one title"}}
+stderr:

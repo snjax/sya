@@ -1,0 +1,15 @@
+code: 0
+stdout:
+<id> [draft] Build API
+type: feature
+priority: high
+parent: <id>
+relations:
+  depends_on: <id>
+
+## Description
+Feature description
+
+## Log
+- <time> @functional: created
+stderr:

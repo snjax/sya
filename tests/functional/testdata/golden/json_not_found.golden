@@ -1,0 +1,4 @@
+code: 2
+stdout:
+{"ok":false,"error":{"type":"not_found","message":"not found: <id>","id":"<id>"}}
+stderr:

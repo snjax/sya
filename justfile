@@ -19,6 +19,10 @@ install:
 test:
     go test ./... -count=1 -timeout 120s
 
+# run black-box functional CLI tests
+func:
+    go test ./tests/functional -count=1
+
 # go vet + gofmt check
 lint:
     go vet ./...

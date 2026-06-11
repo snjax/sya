@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"from":"a00001","relation":"depends_on","to":"b00001","file":".sya/tasks/a00001-a.md","action":"unlinked","ok":true}}
+stderr:

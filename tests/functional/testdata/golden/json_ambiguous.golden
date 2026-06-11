@@ -1,0 +1,4 @@
+code: 2
+stdout:
+{"ok":false,"error":{"type":"ambiguous","message":"ambiguous prefix: abc","prefix":"abc","candidates":[{"id":"<id>","title":"One","type":"task","status":"todo","file":".sya/tasks/<id>-one.md"},{"id":"<id>","title":"Two","type":"task","status":"todo","file":".sya/tasks/<id>-two.md"}]}}
+stderr:

@@ -1,0 +1,4 @@
+code: 4
+stdout:
+{"ok":false,"error":{"type":"schema_invalid","message":"[1:17] sequence end token ']' not found\n\u003e  1 | schema_version: [\n                       ^\n"}}
+stderr:

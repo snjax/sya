@@ -67,6 +67,15 @@ func (e TransitionBlocked) Error() string { return "transition blocked" }
 func (e TransitionBlocked) Type() string  { return "transition_blocked" }
 func (e TransitionBlocked) ExitCode() int { return ExitTransitionRejected }
 
+type AlreadyClaimed struct {
+	Task     string `json:"task"`
+	Assignee string `json:"assignee"`
+}
+
+func (e AlreadyClaimed) Error() string { return fmt.Sprintf("already claimed by %s", e.Assignee) }
+func (e AlreadyClaimed) Type() string  { return "already_claimed" }
+func (e AlreadyClaimed) ExitCode() int { return ExitTransitionRejected }
+
 type SchemaInvalid struct {
 	Message    string      `json:"message"`
 	Violations []Violation `json:"violations,omitempty"`
@@ -159,6 +168,7 @@ func Payload(err error) ErrorPayload {
 	var ambiguous Ambiguous
 	var notAllowed TransitionNotAllowed
 	var blocked TransitionBlocked
+	var alreadyClaimed AlreadyClaimed
 	var schemaInvalid SchemaInvalid
 	var conflictMarkers ErrConflictMarkers
 	var usage Usage
@@ -178,6 +188,9 @@ func Payload(err error) ErrorPayload {
 		payload.Transition = &blocked.Transition
 		payload.Violations = blocked.Violations
 		payload.Alternatives = blocked.Alternatives
+	case errors.As(err, &alreadyClaimed):
+		payload.Task = alreadyClaimed.Task
+		payload.Assignee = alreadyClaimed.Assignee
 	case errors.As(err, &schemaInvalid):
 		payload.Violations = schemaInvalid.Violations
 	case errors.As(err, &conflictMarkers):
@@ -215,6 +228,8 @@ func ErrorMessage(err error) string {
 		return e.Error()
 	case TransitionBlocked:
 		return e.Error()
+	case AlreadyClaimed:
+		return e.Error()
 	case SchemaInvalid:
 		return e.Error()
 	case Usage:
@@ -232,6 +247,7 @@ type ErrorPayload struct {
 	Path         string             `json:"path,omitempty"`
 	Candidates   []Candidate        `json:"candidates,omitempty"`
 	Task         string             `json:"task,omitempty"`
+	Assignee     string             `json:"assignee,omitempty"`
 	From         string             `json:"from,omitempty"`
 	To           string             `json:"to,omitempty"`
 	Transition   *TransitionRef     `json:"transition,omitempty"`

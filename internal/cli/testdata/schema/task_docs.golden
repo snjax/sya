@@ -1,0 +1,43 @@
+# Schema
+
+Процесс разработки: Claude — тех-лид (пишет спеки, ревьюит, двигает статусы), Codex — разработчик (реализация, тесты). Тесты обязаны быть зелёными до review. Свободная проза уровня всего процесса — роли, порядок тестирования, конвенции.
+
+## Relations
+
+| relation | reverse | graph | blocking | from | to | description |
+| --- | --- | --- | --- | --- | --- | --- |
+| affects | affected_by |  | false | decision | * |  |
+| depends_on | blocks | dag | true | * | * | Зависимость по работе: цель должна быть закрыта раньше начала/закрытия источника |
+| discovered_from | discovered | dag | false | * | * |  |
+| duplicates | duplicated_by |  | false | * | * |  |
+| relates |  |  | false | * | * |  |
+| superseded_by | supersedes |  | false | decision | decision |  |
+
+## task
+
+| status | description | flags |
+| --- | --- | --- |
+| todo |  |  |
+| in_progress |  | working |
+| done |  | terminal |
+| scrapped |  | terminal |
+
+| from | to | kind | guards | description |
+| --- | --- | --- | --- | --- |
+| todo | in_progress | advance |  |  |
+| in_progress | todo | advance |  |  |
+| in_progress | done | advance |  |  |
+| todo | scrapped | setback |  |  |
+| in_progress | scrapped | setback |  |  |
+
+```mermaid
+stateDiagram-v2
+  [*] --> todo
+  todo --> in_progress: advance
+  in_progress --> todo: advance
+  in_progress --> done: advance
+  todo -.-> scrapped: setback
+  in_progress -.-> scrapped: setback
+  done --> [*]
+  scrapped --> [*]
+```

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,6 +108,13 @@ func (a *App) Execute(args []string) int {
 	a.result = nil
 	a.root.SetArgs(args)
 	if err := a.root.Execute(); err != nil {
+		var partial partialError
+		if errors.As(err, &partial) {
+			if emitErr := a.Emit(partial.data); emitErr != nil {
+				return a.EmitError(emitErr)
+			}
+			return partial.code
+		}
 		return a.EmitError(err)
 	}
 	if a.result == silent {
@@ -114,6 +122,9 @@ func (a *App) Execute(args []string) int {
 	}
 	if err := a.Emit(a.result); err != nil {
 		return a.EmitError(err)
+	}
+	if result, ok := a.result.(interface{ ResultExitCode() int }); ok {
+		return result.ResultExitCode()
 	}
 	return syaerr.ExitOK
 }

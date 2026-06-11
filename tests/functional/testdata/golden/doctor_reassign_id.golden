@@ -1,0 +1,7 @@
+code: 0
+stdout:
+doctor: clean
+changes:
+  reassign_id .sya/tasks/<id>-one.md <id> -> <id>
+  update_reference .sya/tasks/<id>-ref.md <id> -> <id>
+stderr:

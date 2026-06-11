@@ -1,0 +1,11 @@
+stateDiagram-v2
+  state task {
+    [*] --> todo
+    todo --> in_progress: advance
+    in_progress --> todo: advance
+    in_progress --> done: advance
+    todo -.-> scrapped: setback
+    in_progress -.-> scrapped: setback
+    done --> [*]
+    scrapped --> [*]
+  }

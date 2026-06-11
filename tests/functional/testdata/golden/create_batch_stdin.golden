@@ -1,0 +1,4 @@
+code: 0
+stdout:
+created <id> .sya/tasks/<id>-batch-one.md
+stderr:

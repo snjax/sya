@@ -1,0 +1,4 @@
+code: 0
+stdout:
+unlinked a00001 depends_on b00001
+stderr:

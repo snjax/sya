@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/snjax/sya/internal/syaerr"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +49,11 @@ func (a *App) runInit(prefix string) (InitResult, error) {
 		prefix = "sya"
 	}
 	syaDir := filepath.Join(root, ".sya")
+	if _, err := os.Stat(syaDir); err == nil {
+		return InitResult{}, syaerr.Usage{Message: "sya project already initialized"}
+	} else if err != nil && !os.IsNotExist(err) {
+		return InitResult{}, err
+	}
 	dirs := []string{
 		filepath.Join(syaDir, "tasks"),
 		filepath.Join(syaDir, "memory"),
