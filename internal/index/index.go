@@ -68,7 +68,7 @@ func (i *MemoryIndex) ResolvePrefix(prefix string) (*task.Task, []task.Summary, 
 		return nil, nil, syaerr.NotFound{ID: prefix}
 	}
 	if len(matches) > 1 {
-		return nil, matches, syaerr.Ambiguous{Prefix: prefix, Candidates: matches}
+		return nil, matches, syaerr.Ambiguous{Prefix: prefix, Candidates: errorCandidates(matches)}
 	}
 	return found, nil, nil
 }
@@ -83,4 +83,18 @@ func (i *MemoryIndex) All() []*task.Task {
 
 func (i *MemoryIndex) ReverseEdges() ReverseEdges {
 	return i.reverse
+}
+
+func errorCandidates(summaries []task.Summary) []syaerr.Candidate {
+	candidates := make([]syaerr.Candidate, 0, len(summaries))
+	for _, summary := range summaries {
+		candidates = append(candidates, syaerr.Candidate{
+			ID:     summary.ID,
+			Title:  summary.Title,
+			Type:   summary.Type,
+			Status: summary.Status,
+			File:   summary.File,
+		})
+	}
+	return candidates
 }

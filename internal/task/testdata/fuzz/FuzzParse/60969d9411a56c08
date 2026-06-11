@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("---\ntype: 00\nid: 000080\nstatus: \"\xae\xbd\xba\xbe \xb8 \xbf\x80\x8f\xbe\xba  00\x87\xb5\xb9\"\nlabels: !0000000000000000000 000\n---")
