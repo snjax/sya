@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/syaerr"
 )
 
@@ -23,6 +24,26 @@ func TestDefaultSchemaMatchesReference(t *testing.T) {
 	}
 	if string(DefaultSchemaBytes()) != string(reference) {
 		t.Fatalf("embedded default schema differs from internal/schema/testdata/reference.yml")
+	}
+}
+
+func TestInitCreatesSearchIgnoreFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"init"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("init stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	for _, name := range fsutil.SearchIgnoreFiles {
+		path := filepath.Join(root, ".sya", name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if string(data) != fsutil.SearchIgnoreContent {
+			t.Fatalf("%s content = %q, want %q", name, data, fsutil.SearchIgnoreContent)
+		}
 	}
 }
 

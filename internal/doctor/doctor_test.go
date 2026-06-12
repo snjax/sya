@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/task"
@@ -392,6 +393,8 @@ func (w *fakeDoctorWriter) Remove(name string) error {
 func generatedProject(seed int) fstest.MapFS {
 	files := fstest.MapFS{
 		"schema.yml": {Data: []byte(generatedSchemaYAML())},
+		".ignore":    {Data: []byte(fsutil.SearchIgnoreContent)},
+		".rgignore":  {Data: []byte(fsutil.SearchIgnoreContent)},
 	}
 	count := 3 + seed%5
 	for i := 0; i < count; i++ {

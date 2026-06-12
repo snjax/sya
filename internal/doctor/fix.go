@@ -174,6 +174,12 @@ func FixSafeWith(writer Writer, projectDir string, idx *index.Index, sch *schema
 		return nil, err
 	}
 	changes = append(changes, versionChanges...)
+
+	searchIgnoreChanges, err := FixSearchIgnoreFilesWith(writer, projectDir, report)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, searchIgnoreChanges...)
 	sortChanges(changes)
 	return changes, nil
 }
@@ -274,6 +280,28 @@ func FixSchemaVersionDriftWith(writer Writer, projectDir string, idx *index.Inde
 			From:    from,
 			To:      fmt.Sprint(sch.SchemaVersion),
 			Message: "task was otherwise valid",
+		})
+	}
+	return changes, nil
+}
+
+func FixSearchIgnoreFilesWith(writer Writer, projectDir string, report Report) ([]Change, error) {
+	if writer == nil {
+		writer = OSWriter{}
+	}
+	var changes []Change
+	for _, finding := range report.Findings {
+		if finding.Kind != "search_ignore_missing" || finding.Path == "" {
+			continue
+		}
+		path := resolvePath(projectDir, finding.Path)
+		if err := writer.WriteFile(path, []byte(fsutil.SearchIgnoreContent), 0o644); err != nil {
+			return nil, err
+		}
+		changes = append(changes, Change{
+			Path:    finding.Path,
+			Action:  "create_search_ignore",
+			Message: "created search ignore file",
 		})
 	}
 	return changes, nil

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/task"
@@ -256,6 +257,19 @@ func (r *runner) checkRelationCycle(relation string) {
 }
 
 func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
+	for _, name := range fsutil.SearchIgnoreFiles {
+		filePath := runtimePath(projectDir, name)
+		if _, err := fs.Stat(fsys, filePath); err != nil {
+			r.add(Finding{
+				Kind:     "search_ignore_missing",
+				Severity: SeverityInfo,
+				Path:     filePath,
+				Message:  filePath + " should exist to keep search tools from indexing raw sya data",
+				Fixable:  true,
+			})
+		}
+	}
+
 	data, err := fs.ReadFile(fsys, ".gitignore")
 	if _, statErr := fs.Stat(fsys, strings.Trim(projectDir, "/")+"/events.jsonl"); statErr == nil {
 		if err != nil || !gitignoreContains(data, ".sya/events.jsonl") {
@@ -279,6 +293,14 @@ func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
 			})
 		}
 	}
+}
+
+func runtimePath(projectDir, name string) string {
+	dir := strings.Trim(projectDir, "/")
+	if dir == "" || dir == "." {
+		return name
+	}
+	return dir + "/" + name
 }
 
 func gitignoreContains(data []byte, entry string) bool {

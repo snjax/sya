@@ -73,6 +73,15 @@ func (a *App) runInit(prefix string) (InitResult, error) {
 		{name: filepath.Join(syaDir, "config.yml"), data: []byte(config)},
 		{name: filepath.Join(syaDir, "schema.yml"), data: DefaultSchemaBytes()},
 	}
+	for _, name := range fsutil.SearchIgnoreFiles {
+		files = append(files, struct {
+			name string
+			data []byte
+		}{
+			name: filepath.Join(syaDir, name),
+			data: []byte(fsutil.SearchIgnoreContent),
+		})
+	}
 	var created []string
 	for _, file := range files {
 		if err := fsutil.AtomicWriteFile(file.name, file.data, 0o644); err != nil {
