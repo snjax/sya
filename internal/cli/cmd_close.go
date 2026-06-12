@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/snjax/sya/internal/syaerr"
+	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -52,35 +53,83 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 		return MutationResult{ID: id, OK: false, Error: &payload, Err: err}
 	}
 	typeDef := state.Schema.Types[t.Type]
-	targets := typeDef.Terminal
 	if explicitTo != "" {
 		if !stringIn(typeDef.Terminal, explicitTo) {
 			err := syaerr.Usage{Message: "close --to must be a terminal status"}
 			payload := syaerr.Payload(err)
 			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
-		targets = []string{explicitTo}
+		return a.closeToTerminal(state, t, explicitTo, reason)
 	}
-	for _, target := range targets {
-		transition, ok, err := transitionForStatus(state.Schema, t, target)
-		if err != nil {
+
+	if len(typeDef.Terminal) > 0 {
+		first := typeDef.Terminal[0]
+		if _, ok, err := transitionForStatus(state.Schema, t, first); err != nil {
 			payload := syaerr.Payload(err)
 			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+		} else if ok {
+			return a.closeToTerminal(state, t, first, reason)
+		}
+	}
+
+	reachable, hints, err := reachableCloseTerminals(state, t, typeDef.Terminal[1:])
+	if err != nil {
+		payload := syaerr.Payload(err)
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+	}
+	if len(reachable) > 0 {
+		err := syaerr.CloseAmbiguous{
+			Task:      t.ID,
+			TaskType:  t.Type,
+			From:      t.Status,
+			Reachable: reachable,
+			Hints:     hints,
+		}
+		return a.transitionDenied(state, t, "terminal", err)
+	}
+	err = syaerr.TransitionNotAllowed{Task: t.ID, TaskType: t.Type, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
+	return a.transitionDenied(state, t, "terminal", err)
+}
+
+func (a *App) closeToTerminal(state *projectState, t *task.Task, target, reason string) MutationResult {
+	transition, ok, err := transitionForStatus(state.Schema, t, target)
+	if err != nil {
+		payload := syaerr.Payload(err)
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+	}
+	if !ok {
+		err := syaerr.TransitionNotAllowed{Task: t.ID, TaskType: t.Type, From: t.Status, To: target, Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
+		return a.transitionDenied(state, t, target, err)
+	}
+	if violations := checkTransition(state, t, transition); len(violations) > 0 {
+		err := transitionError(state, t, transition, violations)
+		return a.transitionDenied(state, t, transition.To, err)
+	}
+	from := t.Status
+	if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, true); err != nil {
+		payload := syaerr.Payload(err)
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+	}
+	return a.transitionOK(state, t, from, target, true)
+}
+
+func reachableCloseTerminals(state *projectState, t *task.Task, terminals []string) ([]syaerr.TransitionOption, []string, error) {
+	options := make([]syaerr.TransitionOption, 0, len(terminals))
+	hints := make([]string, 0, len(terminals))
+	for _, target := range terminals {
+		transition, ok, err := transitionForStatus(state.Schema, t, target)
+		if err != nil {
+			return nil, nil, err
 		}
 		if !ok {
 			continue
 		}
-		if violations := checkTransition(state, t, transition); len(violations) > 0 {
-			err := transitionError(state, t, transition, violations)
-			return a.transitionDenied(state, t, transition.To, err)
-		}
-		from := t.Status
-		if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, true); err != nil {
-			payload := syaerr.Payload(err)
-			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
-		}
-		return a.transitionOK(state, t, from, target, true)
+		options = append(options, syaerr.TransitionOption{
+			To:          transition.To,
+			Kind:        string(transition.Kind),
+			Description: transition.Description,
+		})
+		hints = append(hints, "sya close "+t.ID+" --to "+transition.To)
 	}
-	err = syaerr.TransitionNotAllowed{Task: t.ID, TaskType: t.Type, From: t.Status, To: "terminal", Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
-	return a.transitionDenied(state, t, "terminal", err)
+	return options, hints, nil
 }

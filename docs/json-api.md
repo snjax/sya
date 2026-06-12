@@ -91,6 +91,14 @@ Exit code: 3. `claim` uses this when the task type has working statuses, but the
 {"ok":false,"error":{"type":"claim_not_reachable","message":"cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move a3f8c1 spec","task":"a3f8c1","task_type":"feature","from":"draft","working":["impl","review"],"next_advance":{"to":"spec","kind":"advance","description":"Requirements are ready for specification"}}}
 ```
 
+### close_ambiguous
+
+Exit code: 3. `close` uses this when `--to` was omitted, the first terminal status is not directly reachable from the current status, and another terminal is reachable. `reachable` lists the terminal transitions that can be selected explicitly, and `hints` contains literal commands.
+
+```json
+{"ok":false,"error":{"type":"close_ambiguous","message":"cannot infer close target for feature from impl: use --to","task":"a3f8c1","task_type":"feature","from":"impl","reachable":[{"to":"scrapped","kind":"setback","description":"Task was cancelled with rationale in Log"}],"hints":["sya close a3f8c1 --to scrapped"]}}
+```
+
 ### schema_invalid
 
 Exit code: 4. `violations` contains schema or task-file validation findings.

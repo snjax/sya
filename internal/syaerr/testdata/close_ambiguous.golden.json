@@ -1,0 +1,1 @@
+{"ok":false,"error":{"type":"close_ambiguous","message":"cannot infer close target for feature from impl: use --to","task":"a3f8c1","task_type":"feature","from":"impl","reachable":[{"to":"scrapped","kind":"setback","description":"Task was cancelled with rationale in Log"}],"hints":["sya close a3f8c1 --to scrapped"]}}

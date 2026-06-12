@@ -1,0 +1,4 @@
+code: 3
+stdout:
+{"ok":false,"error":{"type":"close_ambiguous","message":"cannot infer close target for feature from impl: use --to","task":"f00001","task_type":"feature","from":"impl","reachable":[{"to":"scrapped","kind":"setback"}],"hints":["sya close f00001 --to scrapped"]}}
+stderr:

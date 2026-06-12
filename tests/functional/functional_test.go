@@ -138,6 +138,15 @@ func TestFunctionalGoldens(t *testing.T) {
 			mustOK(t, runSya(t, root, nil, "move", id, "spec"))
 			return runSya(t, root, nil, "move", id, "impl")
 		}},
+		{"close_ambiguous", func(t *testing.T, root string) runResult {
+			mustOK(t, runSya(t, root, nil, "init"))
+			id := createJSON(t, root, "Close Feature", "-t", "feature")
+			mustOK(t, runSya(t, root, nil, "move", id, "spec"))
+			mustOK(t, runSya(t, root, nil, "update", id, "--field", "spec_approved=true"))
+			mustOK(t, runSya(t, root, strings.NewReader("Design text\n"), "edit", id, "--section", "Design", "--file", "-"))
+			mustOK(t, runSya(t, root, nil, "move", id, "impl"))
+			return runSya(t, root, nil, "close", id)
+		}},
 	}
 
 	for _, tt := range tests {

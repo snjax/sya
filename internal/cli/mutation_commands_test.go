@@ -116,6 +116,14 @@ func TestMutationCommandGoldens(t *testing.T) {
 			mustRun(t, root, nil, []string{"move", "d00001", "in_progress"})
 			return runCLI(t, root, nil, nil, []string{"close", "d00001", "--reason", "done"})
 		}},
+		{name: "close_ambiguous_json", run: func(t *testing.T, root string) (string, string, int) {
+			closeAmbiguousFixture(t, root)
+			return runCLI(t, root, nil, nil, []string{"--json", "close", "f00001"})
+		}},
+		{name: "close_ambiguous_human", run: func(t *testing.T, root string) (string, string, int) {
+			closeAmbiguousFixture(t, root)
+			return runCLI(t, root, nil, nil, []string{"close", "f00001"})
+		}},
 		{name: "reopen_json", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
 			createSeedTask(t, root, "e00001", "Reopen Me")
@@ -274,6 +282,15 @@ func TestMutationErrorPaths(t *testing.T) {
 			wantText: "already_claimed",
 		},
 		{
+			name: "close ambiguous from working feature",
+			setup: func(t *testing.T, root string) {
+				closeAmbiguousFixture(t, root)
+			},
+			args:     []string{"close", "f00001"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: "sya close f00001 --to scrapped",
+		},
+		{
 			name: "claim feature draft not reachable",
 			setup: func(t *testing.T, root string) {
 				initProject(t, root)
@@ -374,6 +391,16 @@ func TestUpdateRelCanonicalizesLikeLink(t *testing.T) {
 	if !strings.Contains(stdout, "depends_on: b00001") {
 		t.Fatalf("canonical relation missing from source task:\n%s", stdout)
 	}
+}
+
+func closeAmbiguousFixture(t *testing.T, root string) {
+	t.Helper()
+	initProject(t, root)
+	createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+	mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+	mustRun(t, root, nil, []string{"update", "f00001", "--field", "spec_approved=true"})
+	mustRun(t, root, strings.NewReader("Design text\n"), []string{"edit", "f00001", "--section", "Design", "--file", "-"})
+	mustRun(t, root, nil, []string{"move", "f00001", "impl"})
 }
 
 func mustRun(t *testing.T, root string, stdin *strings.Reader, args []string) {

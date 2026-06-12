@@ -139,6 +139,28 @@ func (e ClaimNotReachable) Error() string {
 func (e ClaimNotReachable) Type() string  { return "claim_not_reachable" }
 func (e ClaimNotReachable) ExitCode() int { return ExitTransitionRejected }
 
+type CloseAmbiguous struct {
+	Task      string             `json:"task"`
+	TaskType  string             `json:"task_type,omitempty"`
+	From      string             `json:"from"`
+	Reachable []TransitionOption `json:"reachable"`
+	Hints     []string           `json:"hints"`
+}
+
+func (e CloseAmbiguous) Error() string {
+	taskType := e.TaskType
+	if taskType == "" {
+		taskType = "task"
+	}
+	message := fmt.Sprintf("cannot infer close target for %s from %s", taskType, e.From)
+	if len(e.Reachable) > 0 {
+		message += ": use --to"
+	}
+	return message
+}
+func (e CloseAmbiguous) Type() string  { return "close_ambiguous" }
+func (e CloseAmbiguous) ExitCode() int { return ExitTransitionRejected }
+
 type SchemaInvalid struct {
 	Message    string      `json:"message"`
 	Violations []Violation `json:"violations,omitempty"`
@@ -235,6 +257,7 @@ func Payload(err error) ErrorPayload {
 	var blocked TransitionBlocked
 	var alreadyClaimed AlreadyClaimed
 	var claimNotReachable ClaimNotReachable
+	var closeAmbiguous CloseAmbiguous
 	var schemaInvalid SchemaInvalid
 	var conflictMarkers ErrConflictMarkers
 	var gitRequired GitRequired
@@ -266,6 +289,12 @@ func Payload(err error) ErrorPayload {
 		payload.Working = claimNotReachable.Working
 		payload.From = claimNotReachable.From
 		payload.NextAdvance = claimNotReachable.NextAdvance
+	case errors.As(err, &closeAmbiguous):
+		payload.Task = closeAmbiguous.Task
+		payload.TaskType = closeAmbiguous.TaskType
+		payload.From = closeAmbiguous.From
+		payload.Reachable = closeAmbiguous.Reachable
+		payload.Hints = closeAmbiguous.Hints
 	case errors.As(err, &schemaInvalid):
 		payload.Violations = schemaInvalid.Violations
 	case errors.As(err, &conflictMarkers):
@@ -310,6 +339,8 @@ func ErrorMessage(err error) string {
 		return e.Error()
 	case ClaimNotReachable:
 		return e.Error()
+	case CloseAmbiguous:
+		return e.Error()
 	case SchemaInvalid:
 		return e.Error()
 	case Usage:
@@ -337,6 +368,8 @@ type ErrorPayload struct {
 	Allowed      []TransitionOption `json:"allowed,omitempty"`
 	Working      []string           `json:"working,omitempty"`
 	NextAdvance  *TransitionOption  `json:"next_advance,omitempty"`
+	Reachable    []TransitionOption `json:"reachable,omitempty"`
+	Hints        []string           `json:"hints,omitempty"`
 }
 
 func formatTransitionOptions(options []TransitionOption) string {

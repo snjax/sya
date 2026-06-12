@@ -21,6 +21,9 @@ func humanErrorText(err error, c Colorizer) string {
 		renderCandidates(&b, payload.Candidates)
 	case "schema_invalid":
 		renderViolations(&b, payload.Violations)
+	case "close_ambiguous":
+		renderTransitionOptions(&b, "reachable terminals", payload.Reachable)
+		renderHints(&b, payload.Hints)
 	}
 	return b.String()
 }
@@ -40,8 +43,16 @@ func humanErrorMessage(payload syaerr.ErrorPayload) string {
 		}
 	case "claim_not_reachable":
 		return payload.Message
+	case "close_ambiguous":
+		return payload.Message
 	}
 	return payload.Message
+}
+
+func renderHints(b *strings.Builder, hints []string) {
+	for _, hint := range hints {
+		fmt.Fprintf(b, "\n  hint: %s", hint)
+	}
 }
 
 func renderViolations(b *strings.Builder, violations []syaerr.Violation) {

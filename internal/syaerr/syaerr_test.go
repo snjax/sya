@@ -71,6 +71,15 @@ func TestErrorEnvelopeGoldens(t *testing.T) {
 				Description: "Requirements are ready for specification",
 			},
 		},
+		"close_ambiguous": CloseAmbiguous{
+			Task:     "a3f8c1",
+			TaskType: "feature",
+			From:     "impl",
+			Reachable: []TransitionOption{
+				{To: "scrapped", Kind: "setback", Description: "Task was cancelled with rationale in Log"},
+			},
+			Hints: []string{"sya close a3f8c1 --to scrapped"},
+		},
 		"schema_invalid": SchemaInvalid{
 			Message: "schema validation failed",
 			Violations: []Violation{

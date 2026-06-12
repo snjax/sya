@@ -1,0 +1,6 @@
+code: 3
+stdout:
+stderr:
+error: cannot infer close target for feature from impl: use --to
+  reachable terminals: scrapped (setback)
+  hint: sya close <id> --to scrapped
