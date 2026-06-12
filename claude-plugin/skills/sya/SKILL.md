@@ -12,7 +12,7 @@ license: "MIT"
 
 # sya Agent Workflow
 
-`sya` is a git-native issue tracker stored in `.sya/`. Use it when work needs to survive the current chat, coordinate with other agents, preserve task history, or participate in a schema-driven board. Use ephemeral in-chat todos only for short private execution checklists that do not need to persist.
+`sya` is a git-native issue tracker stored in `.sya/`. The tasks database is hidden from grep-style tools; `schema.yml`, `config.yml`, and `memory/` remain readable for agent context. Use sya when work needs to survive the current chat, coordinate with other agents, preserve task history, or participate in a schema-driven board. Use ephemeral in-chat todos only for short private execution checklists that do not need to persist.
 
 ## Start Of Session
 
