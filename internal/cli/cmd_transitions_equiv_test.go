@@ -97,13 +97,15 @@ func expectedTransitionsFromEngine(t *testing.T, state *projectState, id string)
 		t.Fatalf("resolver missing %s", task.ID)
 	}
 	expected := TransitionsResult{Task: task.ID, Status: task.Status}
+	typeDef := state.Schema.Types[task.Type]
 	for _, status := range schema.AvailableTransitions(state.Schema, state.Index.Resolver(), view) {
 		expected.Transitions = append(expected.Transitions, TransitionStatus{
-			To:          status.Transition.To,
-			Kind:        string(status.Transition.Kind),
-			Description: status.Transition.Description,
-			Passing:     status.Passing,
-			Violations:  convertViolations(state, status.Violations),
+			To:                      status.Transition.To,
+			Kind:                    string(status.Transition.Kind),
+			Description:             status.Transition.Description,
+			TargetStatusDescription: typeDef.Statuses[status.Transition.To],
+			Passing:                 status.Passing,
+			Violations:              convertViolations(state, status.Violations),
 		})
 	}
 	return expected

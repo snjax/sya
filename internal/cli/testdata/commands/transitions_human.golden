@@ -1,5 +1,5 @@
 code: 0
 stdout:
-draft -> spec [ok]
-draft -> scrapped [blocked]
+draft -> spec [ok] (advance) — Требования созрели — пишем спецификацию | spec: Пишется и ревьюится спецификация
+draft -> scrapped [blocked] (setback) | scrapped: Отменено, причина в Log
 stderr:

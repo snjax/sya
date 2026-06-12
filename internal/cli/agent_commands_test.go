@@ -142,6 +142,16 @@ func TestAgentCommandErrorPaths(t *testing.T) {
 	}
 }
 
+func TestBoardStatusHeaderTruncatesDescription(t *testing.T) {
+	t.Parallel()
+
+	got := formatBoardStatusHeader("draft", "012345678901234567890123456789012345678901234567890123456789abcdef")
+	want := "draft — 012345678901234567890123456789012345678901234567890123456789..."
+	if got != want {
+		t.Fatalf("formatBoardStatusHeader() = %q, want %q", got, want)
+	}
+}
+
 func TestCommentAppendsLog(t *testing.T) {
 	t.Parallel()
 

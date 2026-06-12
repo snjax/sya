@@ -2,6 +2,7 @@ code: 0
 stdout:
 <id> [draft] Build API
 type: feature
+status: draft — Идея зафиксирована, требования не созрели
 priority: high
 parent: <id>
 relations:

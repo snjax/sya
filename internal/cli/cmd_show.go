@@ -30,19 +30,20 @@ type ShowResult struct {
 }
 
 type TaskCard struct {
-	ID            string         `json:"id"`
-	Type          string         `json:"type"`
-	Title         string         `json:"title"`
-	Status        string         `json:"status"`
-	Priority      string         `json:"priority,omitempty"`
-	Parent        string         `json:"parent,omitempty"`
-	Assignee      string         `json:"assignee,omitempty"`
-	Labels        []string       `json:"labels,omitempty"`
-	Fields        map[string]any `json:"fields,omitempty"`
-	Created       string         `json:"created,omitempty"`
-	SchemaVersion int            `json:"schema_version,omitempty"`
-	Archived      bool           `json:"archived,omitempty"`
-	File          string         `json:"file"`
+	ID                string         `json:"id"`
+	Type              string         `json:"type"`
+	Title             string         `json:"title"`
+	Status            string         `json:"status"`
+	StatusDescription string         `json:"status_description,omitempty"`
+	Priority          string         `json:"priority,omitempty"`
+	Parent            string         `json:"parent,omitempty"`
+	Assignee          string         `json:"assignee,omitempty"`
+	Labels            []string       `json:"labels,omitempty"`
+	Fields            map[string]any `json:"fields,omitempty"`
+	Created           string         `json:"created,omitempty"`
+	SchemaVersion     int            `json:"schema_version,omitempty"`
+	Archived          bool           `json:"archived,omitempty"`
+	File              string         `json:"file"`
 }
 
 type SectionCard struct {
@@ -54,6 +55,7 @@ func (r ShowResult) HumanText(Colorizer) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [%s] %s\n", r.Task.ID, r.Task.Status, r.Task.Title)
 	fmt.Fprintf(&b, "type: %s\n", r.Task.Type)
+	fmt.Fprintf(&b, "status: %s\n", formatStatusWithDescription(r.Task.Status, r.Task.StatusDescription))
 	if r.Task.Priority != "" {
 		fmt.Fprintf(&b, "priority: %s\n", r.Task.Priority)
 	}
@@ -99,7 +101,7 @@ func (a *App) runShow(id string) (ShowResult, error) {
 	}
 	relations := relationView(t, state.Index.ReverseEdges()[t.ID])
 	return ShowResult{
-		Task:       taskCard(t),
+		Task:       taskCard(t, statusDescription(state.Schema, t.Type, t.Status)),
 		Relations:  relations,
 		Sections:   sectionCards(t.Body.Sections),
 		Memory:     memoryForTask(notes, t.ID),
@@ -107,21 +109,22 @@ func (a *App) runShow(id string) (ShowResult, error) {
 	}, nil
 }
 
-func taskCard(t *task.Task) TaskCard {
+func taskCard(t *task.Task, statusDescription string) TaskCard {
 	return TaskCard{
-		ID:            t.ID,
-		Type:          t.Type,
-		Title:         t.Title,
-		Status:        t.Status,
-		Priority:      t.Priority,
-		Parent:        t.Parent,
-		Assignee:      t.Assignee,
-		Labels:        append([]string(nil), t.Labels...),
-		Fields:        t.Fields,
-		Created:       t.Created.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		SchemaVersion: t.SchemaVersion,
-		Archived:      t.Archived,
-		File:          t.File,
+		ID:                t.ID,
+		Type:              t.Type,
+		Title:             t.Title,
+		Status:            t.Status,
+		StatusDescription: statusDescription,
+		Priority:          t.Priority,
+		Parent:            t.Parent,
+		Assignee:          t.Assignee,
+		Labels:            append([]string(nil), t.Labels...),
+		Fields:            t.Fields,
+		Created:           t.Created.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		SchemaVersion:     t.SchemaVersion,
+		Archived:          t.Archived,
+		File:              t.File,
 	}
 }
 

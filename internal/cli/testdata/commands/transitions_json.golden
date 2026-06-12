@@ -1,4 +1,4 @@
 code: 0
 stdout:
-{"ok":true,"data":{"task":"f00001","status":"draft","transitions":[{"to":"spec","kind":"advance","description":"Требования созрели — пишем спецификацию","passing":true},{"to":"scrapped","kind":"setback","passing":false,"violations":[{"kind":"blocking_relation","relation":"depends_on","message":"blocking relation \"depends_on\" has non-terminal targets","offending":[{"id":"d00001","title":"Dependency Task","type":"task","status":"todo","file":".sya/tasks/d00001-dependency-task.md"}]}]}]}}
+{"ok":true,"data":{"task":"f00001","status":"draft","transitions":[{"to":"spec","kind":"advance","description":"Требования созрели — пишем спецификацию","target_status_description":"Пишется и ревьюится спецификация","passing":true},{"to":"scrapped","kind":"setback","target_status_description":"Отменено, причина в Log","passing":false,"violations":[{"kind":"blocking_relation","relation":"depends_on","message":"blocking relation \"depends_on\" has non-terminal targets","offending":[{"id":"d00001","title":"Dependency Task","type":"task","status":"todo","file":".sya/tasks/d00001-dependency-task.md"}]}]}]}}
 stderr:

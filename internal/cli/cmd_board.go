@@ -24,9 +24,10 @@ func init() {
 }
 
 type BoardResult struct {
-	Boards      map[string]map[string][]TaskSummary `json:"boards"`
-	Order       []string                            `json:"-"`
-	StatusOrder map[string][]string                 `json:"-"`
+	Boards             map[string]map[string][]TaskSummary `json:"boards"`
+	Order              []string                            `json:"-"`
+	StatusOrder        map[string][]string                 `json:"-"`
+	StatusDescriptions map[string]map[string]string        `json:"-"`
 }
 
 func (r BoardResult) HumanText(Colorizer) string {
@@ -40,7 +41,7 @@ func (r BoardResult) HumanText(Colorizer) string {
 		}
 		fmt.Fprintf(&b, "%s\n", typeName)
 		for _, status := range r.StatusOrder[typeName] {
-			fmt.Fprintf(&b, "  %s:\n", status)
+			fmt.Fprintf(&b, "  %s:\n", formatBoardStatusHeader(status, r.StatusDescriptions[typeName][status]))
 			tasks := r.Boards[typeName][status]
 			if len(tasks) == 0 {
 				b.WriteString("    -\n")
@@ -86,13 +87,18 @@ func (a *App) runBoard(taskType string) (BoardResult, error) {
 
 func boardForTypes(idx *index.Index, sch *schema.Schema, typeNames []string) BoardResult {
 	result := BoardResult{
-		Boards:      make(map[string]map[string][]TaskSummary, len(typeNames)),
-		Order:       append([]string(nil), typeNames...),
-		StatusOrder: make(map[string][]string, len(typeNames)),
+		Boards:             make(map[string]map[string][]TaskSummary, len(typeNames)),
+		Order:              append([]string(nil), typeNames...),
+		StatusOrder:        make(map[string][]string, len(typeNames)),
+		StatusDescriptions: make(map[string]map[string]string, len(typeNames)),
 	}
 	for _, typeName := range typeNames {
 		typeDef := sch.Types[typeName]
 		result.StatusOrder[typeName] = append([]string(nil), typeDef.Pipeline...)
+		result.StatusDescriptions[typeName] = make(map[string]string, len(typeDef.Statuses))
+		for status, description := range typeDef.Statuses {
+			result.StatusDescriptions[typeName][status] = description
+		}
 		result.Boards[typeName] = make(map[string][]TaskSummary, len(typeDef.Pipeline))
 		for _, status := range typeDef.Pipeline {
 			result.Boards[typeName][status] = []TaskSummary{}
@@ -107,6 +113,14 @@ func boardForTypes(idx *index.Index, sch *schema.Schema, typeNames []string) Boa
 		}
 	}
 	return result
+}
+
+func formatBoardStatusHeader(status, description string) string {
+	description = truncateStatusDescription(description)
+	if description == "" {
+		return status
+	}
+	return status + " — " + description
 }
 
 func typeBoardVisible(typeDef schema.TypeDef) bool {
