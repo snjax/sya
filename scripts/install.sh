@@ -54,14 +54,13 @@ case ":$PATH:" in
 	*)
 		info ""
 		info "$install_dir is not in PATH."
-		case "${SHELL:-}" in
-			*/bash)
-				info "Add it with: printf '%s\n' 'export PATH=\"$install_dir:\$PATH\"' >> ~/.bashrc"
-				;;
-			*/fish)
+		shell_name=${SHELL:-}
+		shell_name=${shell_name##*/}
+		case "$shell_name" in
+			fish)
 				info "Add it with: fish_add_path $install_dir"
 				;;
-			*/zsh)
+			zsh)
 				info "Add it with: printf '%s\n' 'export PATH=\"$install_dir:\$PATH\"' >> ~/.zshrc"
 				;;
 			*)
