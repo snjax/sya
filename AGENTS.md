@@ -14,10 +14,11 @@ MANDATORY workflow:
    sections: `sya edit <id> --section Description --file -`.
 5. Discovered a bug or extra work? `sya create "..." -t bug --rel discovered_from=<current-id>`.
 6. Done means done: `sya close <id>` only after the pipeline allows it.
-7. Do NOT read or write files under `.sya/` directly (`.sya/.ignore` hides them
-   from search tools on purpose) — the only exception is `.sya/schema.yml` when
-   the task is explicitly about changing the workflow (validate with
-   `sya schema validate` + `sya doctor` afterwards).
+7. Do NOT read or write `.sya/tasks/` directly (`.sya/.ignore` hides the task
+   database from grep-style tools on purpose); `.sya/schema.yml`,
+   `.sya/config.yml`, and `.sya/memory/` remain readable for agent context.
+   Edit `.sya/schema.yml` only when the task is explicitly about changing the
+   workflow (validate with `sya schema validate` + `sya doctor` afterwards).
 8. Commit `.sya/` changes together with the code they describe; reference the
    task id in the commit message: `feat: ... (sya-<id>)`.
 
