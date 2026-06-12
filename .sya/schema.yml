@@ -41,6 +41,7 @@ types:
       scrapped: "Этап отменён, причина в Log"
     terminal: [done, scrapped]
     working: [active]
+    sections: [Description]
     transitions:
       open -> active:
         description: "Работа над этапом началась"
