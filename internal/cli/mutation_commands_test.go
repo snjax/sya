@@ -262,6 +262,95 @@ func TestClaimWorkingStatusStealsAssignee(t *testing.T) {
 	}
 }
 
+func TestGuardSuccessFeedback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		setup     func(t *testing.T, root string)
+		args      []string
+		wantLines []string
+	}{
+		{
+			name: "move",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				replaceSchemaSnippet(t, root, "      todo -> in_progress: {}", `      todo -> in_progress:
+        guards:
+          - kind: check
+            run: 'test "$SYA_TASK_ID" = "a00001"'
+            message: local check passed
+          - kind: attest
+            id: review
+            question: Did you review it?`)
+				createSeedTask(t, root, "a00001", "Guarded Move")
+			},
+			args: []string{"move", "a00001", "in_progress", "--attest", "review=yes: reviewed the guarded move"},
+			wantLines: []string{
+				"✓ check passed: local check passed",
+				"✓ attested review",
+			},
+		},
+		{
+			name: "claim",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				replaceSchemaSnippet(t, root, "      todo -> in_progress: {}", `      todo -> in_progress:
+        guards:
+          - kind: check
+            run: 'test "$SYA_TASK_ID" = "a00001"'
+            message: claim check passed
+          - kind: attest
+            id: claim
+            question: Did you verify the claim?`)
+				createSeedTask(t, root, "a00001", "Guarded Claim")
+			},
+			args: []string{"claim", "a00001", "--attest", "claim=yes: verified before claiming"},
+			wantLines: []string{
+				"✓ check passed: claim check passed",
+				"✓ attested claim",
+			},
+		},
+		{
+			name: "close",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				replaceSchemaSnippet(t, root, "      in_progress -> done: {}", `      in_progress -> done:
+        guards:
+          - kind: check
+            run: 'test "$SYA_TASK_FILE" = ".sya/tasks/a00001-guarded-close.md"'
+          - kind: attest
+            id: close
+            question: Did you verify close?`)
+				createSeedTask(t, root, "a00001", "Guarded Close")
+				mustRun(t, root, nil, []string{"move", "a00001", "in_progress"})
+			},
+			args: []string{"close", "a00001", "--attest", "close=yes: verified before closing"},
+			wantLines: []string{
+				`✓ check passed: test "$SYA_TASK_FILE" = ".sya/tasks/a00001-guarded-close.md"`,
+				"✓ attested close",
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			tt.setup(t, root)
+			stdout, stderr, code := runCLI(t, root, nil, nil, tt.args)
+			if code != syaerr.ExitOK {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			for _, want := range tt.wantLines {
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("stderr=%q, want %q", stderr, want)
+				}
+			}
+		})
+	}
+}
+
 func TestUnlinkMissingRelationIsNoop(t *testing.T) {
 	t.Parallel()
 
@@ -484,6 +573,11 @@ func replaceInFile(t *testing.T, path, old, new string) {
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func replaceSchemaSnippet(t *testing.T, root, old, new string) {
+	t.Helper()
+	replaceInFile(t, filepath.Join(root, ".sya", "schema.yml"), old, new)
 }
 
 func parseTaskFileForTest(t *testing.T, path string) *task.Task {

@@ -10,29 +10,39 @@ import (
 func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var explain bool
+		var attest attestFlagValues
 		cmd := app.command("move <id>... <status>", "Move task status", cobra.MinimumNArgs(2), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			status := args[len(args)-1]
 			if explain {
-				return app.runMove(args[:len(args)-1], status, explain)
+				return app.runMove(args[:len(args)-1], status, explain, attest)
 			}
 			return app.withProjectMutationLock(func() (any, error) {
-				return app.runMove(args[:len(args)-1], status, explain)
+				return app.runMove(args[:len(args)-1], status, explain, attest)
 			})
 		})
 		cmd.Flags().BoolVar(&explain, "explain", false, "check transition without writing")
+		cmd.Flags().Var(&attest, "attest", "attest guard answer: id=\"yes: <justification>\"")
 		return cmd
 	})
 }
 
-func (a *App) runMove(ids []string, status string, explain bool) (any, error) {
+func (a *App) runMove(ids []string, status string, explain bool, attestValues attestFlagValues) (any, error) {
 	state, err := a.loadProject()
 	if err != nil {
 		return nil, err
 	}
+	attestations, err := parseAttestations(attestValues)
+	if err != nil {
+		return nil, err
+	}
+	if !explain && attestations == nil {
+		attestations = map[string]string{}
+	}
+	opts := mutationOptions{Attestations: attestations, ExecuteChecks: !explain}
 	results := MutationResults{Results: make([]MutationResult, 0, len(ids))}
 	hadError := false
 	for _, id := range ids {
-		result := a.moveOne(state, id, status, "", !explain)
+		result := a.moveOne(state, id, status, "", !explain, opts)
 		if !result.OK {
 			hadError = true
 		}
@@ -47,7 +57,7 @@ func (a *App) runMove(ids []string, status string, explain bool) (any, error) {
 	return results, nil
 }
 
-func (a *App) moveOne(state *projectState, id, status, reason string, write bool) MutationResult {
+func (a *App) moveOne(state *projectState, id, status, reason string, write bool, opts mutationOptions) MutationResult {
 	t, err := state.Index.Resolve(id)
 	if err != nil {
 		payload := syaerr.Payload(err)
@@ -72,7 +82,7 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
-	if violations := checkTransition(state, t, transition); len(violations) > 0 {
+	if violations := checkTransition(state, t, transition, opts); len(violations) > 0 {
 		err := transitionError(state, t, transition, violations)
 		if write {
 			return a.transitionDenied(state, t, transition.To, err)
@@ -81,9 +91,19 @@ func (a *App) moveOne(state *projectState, id, status, reason string, write bool
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
 	from := t.Status
+	attest := transitionAttestations(transition, opts.Attestations)
+	if write {
+		if err := appendAttestationLogs(t, a.now(), a.Actor(), attest); err != nil {
+			payload := syaerr.Payload(err)
+			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+		}
+	}
 	if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, write); err != nil {
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
-	return a.transitionOK(state, t, from, transition.To, write)
+	if write {
+		a.emitGuardSuccesses(transition, opts)
+	}
+	return a.transitionOK(state, t, from, transition.To, write, attest)
 }

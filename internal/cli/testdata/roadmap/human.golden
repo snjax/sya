@@ -1,0 +1,18 @@
+code: 0
+stdout:
+# Roadmap
+
+## Platform Epic (0/4 closed) [░░░░░░░░░░]
+Roadmap epic description
+
+- ⛔ x00001 [todo] Blocked Work — blocked: blocking relation "depends_on" has non-terminal targets
+- · a00001 [todo] Design Alpha
+- ▸ b00001 [in_progress] Build Beta @codex
+
+## Top-level tasks
+
+### docs
+- · d00001 [todo] Top Docs
+
+Archived tasks: 1
+stderr:

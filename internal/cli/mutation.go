@@ -1,7 +1,12 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,6 +32,26 @@ type MutationResult struct {
 
 type MutationResults struct {
 	Results []MutationResult `json:"results"`
+}
+
+type mutationOptions struct {
+	Attestations  map[string]string
+	ExecuteChecks bool
+}
+
+type attestFlagValues []string
+
+func (v *attestFlagValues) String() string {
+	return strings.Join(*v, ",")
+}
+
+func (v *attestFlagValues) Set(value string) error {
+	*v = append(*v, value)
+	return nil
+}
+
+func (v *attestFlagValues) Type() string {
+	return "attest"
 }
 
 type partialError struct {
@@ -119,12 +144,17 @@ func passingAlternatives(sch *schema.Schema, resolver schema.Resolver, t *task.T
 	return options
 }
 
-func checkTransition(state *projectState, t *task.Task, transition schema.Transition) []syaerr.Violation {
+func checkTransition(state *projectState, t *task.Task, transition schema.Transition, opts mutationOptions) []syaerr.Violation {
 	view, ok := state.Index.Resolver().Get(t.ID)
 	if !ok {
 		return nil
 	}
-	return convertViolationsForTask(state, t, schema.Evaluate(state.Schema, state.Index.Resolver(), view, transition))
+	evalOpts := schema.EvalOptions{Attestations: opts.Attestations}
+	if opts.ExecuteChecks {
+		evalOpts.CheckRunner = shellCheckRunner{dir: state.Project.Root}
+		evalOpts.CheckEnv = taskGuardEnv(t)
+	}
+	return convertViolationsForTask(state, t, schema.EvaluateWithOptions(state.Schema, state.Index.Resolver(), view, transition, evalOpts))
 }
 
 func convertViolations(state *projectState, violations []schema.Violation) []syaerr.Violation {
@@ -163,6 +193,11 @@ func convertViolationsForTask(state *projectState, source *task.Task, violations
 			File:      file,
 			Message:   violation.Message,
 			Hint:      violation.Hint,
+			Deferred:  violation.Deferred,
+			ExitCode:  violation.ExitCode,
+			Stderr:    violation.Stderr,
+			Question:  violation.Question,
+			AttestID:  violation.AttestID,
 			Offending: offending,
 		})
 	}
@@ -192,19 +227,19 @@ func (a *App) transitionDenied(state *projectState, t *task.Task, to string, err
 		to = payload.Transition.To
 	}
 	if state != nil && t != nil {
-		a.recordTransitionEvent(state, t.ID, t.Status, to, events.ResultDenied, syaerr.ErrorType(err), payload.Violations)
+		a.recordTransitionEvent(state, t.ID, t.Status, to, events.ResultDenied, syaerr.ErrorType(err), nil, payload.Violations)
 	}
 	return MutationResult{ID: taskID(t), File: taskFile(t), OK: false, Error: &payload, Err: err}
 }
 
-func (a *App) transitionOK(state *projectState, t *task.Task, from, to string, write bool) MutationResult {
+func (a *App) transitionOK(state *projectState, t *task.Task, from, to string, write bool, attest []events.Attestation) MutationResult {
 	if write {
-		a.recordTransitionEvent(state, t.ID, from, to, events.ResultOK, "", nil)
+		a.recordTransitionEvent(state, t.ID, from, to, events.ResultOK, "", attest, nil)
 	}
 	return MutationResult{ID: t.ID, File: t.File, From: from, To: to, Status: to, OK: true}
 }
 
-func (a *App) recordTransitionEvent(state *projectState, taskID, from, to, result, errorType string, violations []syaerr.Violation) {
+func (a *App) recordTransitionEvent(state *projectState, taskID, from, to, result, errorType string, attest []events.Attestation, violations []syaerr.Violation) {
 	if state == nil {
 		return
 	}
@@ -216,6 +251,7 @@ func (a *App) recordTransitionEvent(state *projectState, taskID, from, to, resul
 		To:         to,
 		Result:     result,
 		ErrorType:  errorType,
+		Attest:     attest,
 		Violations: violations,
 	}
 	if err := a.appendEvent(state.Project.Root, event); err != nil && !a.quiet {
@@ -237,6 +273,144 @@ func moveTask(state *projectState, root string, t *task.Task, transition schema.
 	}
 	t.Status = from
 	return nil
+}
+
+func parseAttestations(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(values))
+	for _, raw := range values {
+		id, answer, ok := strings.Cut(raw, "=")
+		id = strings.TrimSpace(id)
+		answer = strings.TrimSpace(answer)
+		if !ok || id == "" || answer == "" {
+			return nil, syaerr.Usage{Message: "expected --attest id=\"yes: <justification>\""}
+		}
+		out[id] = answer
+	}
+	return out, nil
+}
+
+func transitionAttestations(transition schema.Transition, answers map[string]string) []events.Attestation {
+	if len(answers) == 0 {
+		return nil
+	}
+	out := make([]events.Attestation, 0)
+	seen := make(map[string]bool)
+	for _, guard := range transition.Guards {
+		if guard.Kind != schema.GuardAttest || guard.Params == nil {
+			continue
+		}
+		id, ok := guard.Params["id"].(string)
+		if !ok || id == "" || seen[id] {
+			continue
+		}
+		answer := answers[id]
+		if !attestAnswerValid(answer) {
+			continue
+		}
+		out = append(out, events.Attestation{ID: id, Answer: answer})
+		seen[id] = true
+	}
+	return out
+}
+
+func appendAttestationLogs(t *task.Task, ts time.Time, actor string, attest []events.Attestation) error {
+	for _, item := range attest {
+		if err := appendTaskLog(t, ts, actor, fmt.Sprintf("attested %s: %s", item.ID, item.Answer)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) emitGuardSuccesses(transition schema.Transition, opts mutationOptions) {
+	if a == nil || a.quiet {
+		return
+	}
+	seenAttest := make(map[string]bool)
+	for _, guard := range transition.Guards {
+		switch guard.Kind {
+		case schema.GuardCheck:
+			if !opts.ExecuteChecks {
+				continue
+			}
+			fmt.Fprintf(a.err, "✓ check passed: %s\n", checkSuccessLabel(guard))
+		case schema.GuardAttest:
+			id, ok := guard.Params["id"].(string)
+			if !ok || id == "" || seenAttest[id] || !attestAnswerValid(opts.Attestations[id]) {
+				continue
+			}
+			fmt.Fprintf(a.err, "✓ attested %s\n", id)
+			seenAttest[id] = true
+		}
+	}
+}
+
+func checkSuccessLabel(guard schema.Guard) string {
+	if strings.TrimSpace(guard.Message) != "" {
+		return strings.TrimSpace(guard.Message)
+	}
+	if guard.Params != nil {
+		if run, ok := guard.Params["run"].(string); ok && strings.TrimSpace(run) != "" {
+			return strings.TrimSpace(run)
+		}
+	}
+	return "check"
+}
+
+func attestAnswerValid(answer string) bool {
+	trimmed := strings.TrimSpace(answer)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "yes:") {
+		return false
+	}
+	return len([]rune(strings.TrimSpace(trimmed[len("yes:"):]))) >= 10
+}
+
+func taskGuardEnv(t *task.Task) map[string]string {
+	return map[string]string{
+		"SYA_TASK_ID":   t.ID,
+		"SYA_TASK_FILE": t.File,
+	}
+}
+
+type shellCheckRunner struct {
+	dir string
+}
+
+func (r shellCheckRunner) Run(command string, timeout time.Duration, env map[string]string) (int, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Dir = r.dir
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	tail := stderrTail(stderr.String(), 4096)
+	if ctx.Err() == context.DeadlineExceeded {
+		return -1, tail, ctx.Err()
+	}
+	if err == nil {
+		return 0, tail, nil
+	}
+	var exitErr *exec.ExitError
+	if ok := errors.As(err, &exitErr); ok {
+		return exitErr.ExitCode(), tail, err
+	}
+	return -1, tail, err
+}
+
+func stderrTail(text string, limit int) string {
+	if len(text) <= limit {
+		return strings.TrimSpace(text)
+	}
+	return strings.TrimSpace(text[len(text)-limit:])
 }
 
 func appendTransitionLog(t *task.Task, ts time.Time, actor, from, to, kind, reason string) error {

@@ -230,6 +230,11 @@ type Violation struct {
 	File      string      `json:"file,omitempty"`
 	Message   string      `json:"message"`
 	Hint      string      `json:"hint,omitempty"`
+	Deferred  bool        `json:"deferred,omitempty"`
+	ExitCode  int         `json:"exit_code,omitempty"`
+	Stderr    string      `json:"stderr_tail,omitempty"`
+	Question  string      `json:"question,omitempty"`
+	AttestID  string      `json:"attest_id,omitempty"`
 	Offending []Candidate `json:"offending,omitempty"`
 }
 

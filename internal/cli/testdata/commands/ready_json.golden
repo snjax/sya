@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"tasks":[{"id":"f00001","type":"feature","title":"Build API","status":"draft","priority":"high","parent":"e00001","file":".sya/tasks/f00001-build-api.md","pending_deps":1},{"id":"d00001","type":"task","title":"Dependency Task","status":"todo","priority":"normal","file":".sya/tasks/d00001-dependency-task.md"},{"id":"e00001","type":"epic","title":"Platform Epic","status":"open","priority":"normal","file":".sya/tasks/e00001-platform-epic.md"}]}}
+stderr:

@@ -1,0 +1,6 @@
+code: 0
+stdout:
+f00001 feature    draft        Build API [deps: 1 open]
+d00001 task       todo         Dependency Task
+e00001 epic       open         Platform Epic
+stderr:

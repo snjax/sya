@@ -53,5 +53,5 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 	if err := writeTask(state, t); err != nil {
 		return MutationResult{}, err
 	}
-	return a.transitionOK(state, t, from, to, true), nil
+	return a.transitionOK(state, t, from, to, true, nil), nil
 }

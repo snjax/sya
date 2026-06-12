@@ -1,0 +1,34 @@
+code: 0
+stdout:
+type       status       count
+bug        open         0
+bug        triage       0
+bug        impl         0
+bug        verify       0
+bug        done         0
+bug        scrapped     0
+decision   proposed     0
+decision   accepted     0
+decision   superseded   0
+decision   rejected     0
+docs       todo         0
+docs       writing      0
+docs       done         0
+epic       open         1
+epic       active       0
+epic       done         0
+epic       scrapped     0
+feature    draft        1
+feature    spec         0
+feature    impl         0
+feature    review       0
+feature    done         0
+feature    scrapped     0
+task       todo         1
+task       in_progress  0
+task       done         0
+task       scrapped     0
+
+totals: tasks=3 active=3 terminal=0 archived=0 ready=3 blocked=0 dead_end=0 quarantined=0 wisps=0
+active age: avg=0.0d max=0d
+stderr:

@@ -180,6 +180,31 @@ types:
 			wantWarning: "guard_status_unknown",
 		},
 		{
+			name:      "check guard requires run",
+			input:     strings.Replace(baseSchemaYAML(), "kind: section_nonempty\n            section: Design\n            message: ok", "kind: check\n            message: run it", 1),
+			wantKind:  "guard_param_missing",
+			wantValid: false,
+		},
+		{
+			name:      "attest guard requires question",
+			input:     strings.Replace(baseSchemaYAML(), "kind: section_nonempty\n            section: Design", "kind: attest\n            id: review", 1),
+			wantKind:  "guard_param_missing",
+			wantValid: false,
+		},
+		{
+			name: "attest guard ids unique per transition",
+			input: strings.Replace(baseSchemaYAML(), `          - kind: section_nonempty
+            section: Design
+            message: ok`, `          - kind: attest
+            id: review
+            question: Reviewed?
+          - kind: attest
+            id: review
+            question: Still reviewed?`, 1),
+			wantKind:  "guard_attest_duplicate",
+			wantValid: false,
+		},
+		{
 			name:      "terminal required",
 			input:     strings.Replace(baseSchemaYAML(), "    terminal: [done, scrapped]\n", "", 1),
 			wantKind:  "terminal_required",

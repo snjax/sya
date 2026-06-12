@@ -152,6 +152,31 @@ func TestReadyBlockedCommandsDependencyChain(t *testing.T) {
 	}
 }
 
+func TestReadyShowsPendingDepsWithoutChangingMembership(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "d00001", "Open Dependency")
+	createSeedTask(t, root, "f00001", "Draft Feature", "-t", "feature", "--depends-on", "d00001")
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"ready"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("ready stderr=%q code=%d", stderr, code)
+	}
+	if !strings.Contains(stdout, "f00001") || !strings.Contains(stdout, "[deps: 1 open]") {
+		t.Fatalf("ready stdout=%q, want feature ready with open deps marker", stdout)
+	}
+
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"--json", "ready"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("ready json stderr=%q code=%d", stderr, code)
+	}
+	if !strings.Contains(stdout, `"id":"f00001"`) || !strings.Contains(stdout, `"pending_deps":1`) {
+		t.Fatalf("ready json stdout=%q, want pending_deps", stdout)
+	}
+}
+
 func writeSchemaFile(t *testing.T, root, contents string) {
 	t.Helper()
 	path := filepath.Join(root, ".sya", "schema.yml")

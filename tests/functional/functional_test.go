@@ -86,6 +86,31 @@ func TestFunctionalGoldens(t *testing.T) {
 			fixtureProject(t, root)
 			return runSya(t, root, nil, "list", "-t", "feature", "--limit", "1")
 		}},
+		{"query", func(t *testing.T, root string) runResult {
+			fixtureProject(t, root)
+			return runSya(t, root, nil, "query", "ready and type=feature and rel.depends_on")
+		}},
+		{"stats", func(t *testing.T, root string) runResult {
+			fixtureProject(t, root)
+			return runSya(t, root, nil, "stats")
+		}},
+		{"duplicates", func(t *testing.T, root string) runResult {
+			setupDuplicatesProject(t, root)
+			return runSya(t, root, nil, "duplicates", "--threshold", "0.45")
+		}},
+		{"stale", func(t *testing.T, root string) runResult {
+			mustOK(t, runSya(t, root, nil, "init"))
+			id := createJSON(t, root, "Old Task")
+			path := findTaskFile(t, root, id)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = []byte(strings.Replace(string(data), "@functional: created", "@functional: created", 1))
+			data = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z @functional: created`).ReplaceAll(data, []byte("2025-12-01T03:04:05Z @functional: created"))
+			mustWrite(t, path, data)
+			return runSya(t, root, nil, "stale", "--days", "14")
+		}},
 		{"transitions", func(t *testing.T, root string) runResult {
 			id := fixtureProject(t, root)
 			return runSya(t, root, nil, "transitions", id[:3])
@@ -172,6 +197,40 @@ func TestFunctionalGoldens(t *testing.T) {
 
 }
 
+func TestAttestFunctionalE2E(t *testing.T) {
+	root := t.TempDir()
+	mustOK(t, runSya(t, root, nil, "init"))
+	schemaPath := filepath.Join(root, ".sya", "schema.yml")
+	data, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), "      todo -> in_progress: {}", `      todo -> in_progress:
+        guards:
+          - kind: attest
+            id: review
+            question: Did you review the work?`, 1)
+	mustWrite(t, schemaPath, []byte(updated))
+	id := createJSON(t, root, "Attested task")
+	result := runSya(t, root, nil, "move", id, "in_progress", "--attest", `review=yes: reviewed the implementation carefully`)
+	mustOK(t, result)
+
+	taskData, err := os.ReadFile(findTaskFile(t, root, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(taskData), "attested review: yes: reviewed the implementation carefully") {
+		t.Fatalf("task log missing attestation:\n%s", taskData)
+	}
+	eventsData, err := os.ReadFile(filepath.Join(root, ".sya", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(eventsData), `"attest":[{"id":"review","answer":"yes: reviewed the implementation carefully"}]`) {
+		t.Fatalf("events missing attestation:\n%s", eventsData)
+	}
+}
+
 func runSya(t *testing.T, dir string, stdin io.Reader, args ...string) runResult {
 	t.Helper()
 	cmd := exec.Command(syaBin, args...)
@@ -226,6 +285,18 @@ func fixtureProject(t *testing.T, root string) string {
 	epic := createJSON(t, root, "Platform", "-t", "epic")
 	dep := createJSON(t, root, "Dependency")
 	return createJSON(t, root, "Build API", "-t", "feature", "-p", "high", "--parent", epic, "--depends-on", dep, "-d", "Feature description")
+}
+
+func findTaskFile(t *testing.T, root, id string) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(root, ".sya", "tasks", id+"*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("task file matches for %s: %v", id, matches)
+	}
+	return matches[0]
 }
 
 func copyDoctorFixture(t *testing.T, name, root string) {
@@ -311,6 +382,14 @@ schema_version: 2
 ## Description
 Two.
 `))
+}
+
+func setupDuplicatesProject(t *testing.T, root string) {
+	t.Helper()
+	mustOK(t, runSya(t, root, nil, "init"))
+	createJSON(t, root, "Fix parser panic", "-d", "Fix malformed YAML frontmatter parser panic and add regression coverage")
+	createJSON(t, root, "Fix parser crash", "-d", "Fix YAML frontmatter parser crash with malformed input and regression tests")
+	createJSON(t, root, "Render dashboard", "-d", "Improve dashboard layout and card spacing")
 }
 
 func copyTree(t *testing.T, source, dest string) {

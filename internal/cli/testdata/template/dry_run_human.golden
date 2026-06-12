@@ -1,0 +1,6 @@
+code: 0
+stdout:
+would create follow -> c00001 .sya/tasks/c00001-follow-streaming.md
+would create impl -> b00001 .sya/tasks/b00001-build-streaming.md
+would create spec -> a00001 .sya/tasks/a00001-spec-streaming.md
+stderr:

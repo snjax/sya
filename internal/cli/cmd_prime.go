@@ -105,7 +105,11 @@ func (r PrimeResult) HumanText(Colorizer) string {
 		b.WriteString("- none\n")
 	} else {
 		for _, t := range r.Ready {
-			fmt.Fprintf(&b, "- %s [%s/%s/%s] %s\n", t.ID, t.Type, t.Status, t.Priority, t.Title)
+			suffix := ""
+			if t.PendingDeps > 0 {
+				suffix = fmt.Sprintf(" [deps: %d open]", t.PendingDeps)
+			}
+			fmt.Fprintf(&b, "- %s [%s/%s/%s] %s%s\n", t.ID, t.Type, t.Status, t.Priority, t.Title, suffix)
 		}
 	}
 	b.WriteString("\nin-progress:\n")
@@ -221,7 +225,9 @@ func primeReady(state *projectState, limit int) []TaskSummary {
 		if !ok || !schema.Ready(state.Schema, resolver, view) {
 			continue
 		}
-		result = append(result, summarizeTask(t))
+		summary := summarizeTask(t)
+		summary.PendingDeps = pendingBlockingDeps(state, t)
+		result = append(result, summary)
 		if limit > 0 && len(result) >= limit {
 			break
 		}

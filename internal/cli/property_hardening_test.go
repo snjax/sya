@@ -42,7 +42,7 @@ func TestFullPipelineProperty(t *testing.T) {
 				if !available.Passing {
 					continue
 				}
-				result := app.moveOne(state, candidate.ID, available.Transition.To, "", false)
+				result := app.moveOne(state, candidate.ID, available.Transition.To, "", false, mutationOptions{})
 				if !result.OK {
 					t.Fatalf("seed %d passing transition rejected by move logic: %#v", seed, result)
 				}

@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestEvaluateGuardTruthTables(t *testing.T) {
@@ -357,6 +358,101 @@ func TestAvailableReadyBlockedSemantics(t *testing.T) {
 	})
 }
 
+func TestCheckGuardEvaluation(t *testing.T) {
+	t.Parallel()
+	sch := engineSchema()
+	task := engineTask{id: "a", typ: "task", status: "todo"}
+	resolver := engineResolver{tasks: map[string]engineTask{"a": task}}
+	transition := Transition{From: "todo", To: "in_progress", Guards: []Guard{{
+		Kind:    GuardCheck,
+		Params:  map[string]any{"run": "just test", "timeout": 7},
+		Message: "check failed",
+		Hint:    "fix the check",
+	}}}
+
+	t.Run("deferred without runner", func(t *testing.T) {
+		t.Parallel()
+		violations := Evaluate(sch, resolver, task, transition)
+		if len(violations) != 1 || !violations[0].Deferred || violations[0].Kind != string(GuardCheck) {
+			t.Fatalf("violations = %#v, want deferred check", violations)
+		}
+	})
+
+	t.Run("pass", func(t *testing.T) {
+		t.Parallel()
+		violations := EvaluateWithOptions(sch, resolver, task, transition, EvalOptions{
+			CheckRunner: fakeCheckRunner{exitCode: 0},
+			CheckEnv:    map[string]string{"SYA_TASK_ID": "a"},
+		})
+		if len(violations) != 0 {
+			t.Fatalf("violations = %#v, want none", violations)
+		}
+	})
+
+	t.Run("fail", func(t *testing.T) {
+		t.Parallel()
+		violations := EvaluateWithOptions(sch, resolver, task, transition, EvalOptions{
+			CheckRunner: fakeCheckRunner{exitCode: 2, stderr: "bad things"},
+		})
+		if len(violations) != 1 || violations[0].ExitCode != 2 || violations[0].Stderr != "bad things" {
+			t.Fatalf("violations = %#v, want check failure details", violations)
+		}
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		t.Parallel()
+		violations := EvaluateWithOptions(sch, resolver, task, transition, EvalOptions{
+			CheckRunner: fakeCheckRunner{exitCode: -1, stderr: "timed out", err: errFakeTimeout{}},
+		})
+		if len(violations) != 1 || violations[0].ExitCode != -1 || violations[0].Stderr != "timed out" {
+			t.Fatalf("violations = %#v, want timeout details", violations)
+		}
+	})
+}
+
+func TestAttestGuardEvaluation(t *testing.T) {
+	t.Parallel()
+	sch := engineSchema()
+	task := engineTask{id: "a", typ: "task", status: "todo"}
+	resolver := engineResolver{tasks: map[string]engineTask{"a": task}}
+	transition := Transition{From: "todo", To: "in_progress", Guards: []Guard{{
+		Kind:   GuardAttest,
+		Params: map[string]any{"id": "review", "question": "Did you review it?"},
+	}}}
+
+	cases := []struct {
+		name       string
+		answers    map[string]string
+		wantFail   bool
+		wantDefer  bool
+		wantHint   string
+		wantPrompt string
+	}{
+		{name: "deferred", answers: nil, wantFail: true, wantDefer: true, wantHint: "--attest review=\"yes: <justification>\"", wantPrompt: "Did you review it?"},
+		{name: "missing", answers: map[string]string{}, wantFail: true, wantHint: "--attest review=\"yes: <justification>\"", wantPrompt: "Did you review it?"},
+		{name: "invalid", answers: map[string]string{"review": "no: skipped"}, wantFail: true, wantHint: "--attest review=\"yes: <justification>\"", wantPrompt: "Did you review it?"},
+		{name: "short", answers: map[string]string{"review": "yes: too short"}, wantFail: true, wantHint: "--attest review=\"yes: <justification>\"", wantPrompt: "Did you review it?"},
+		{name: "pass", answers: map[string]string{"review": "yes: reviewed the implementation carefully"}},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			violations := EvaluateWithOptions(sch, resolver, task, transition, EvalOptions{Attestations: tc.answers})
+			if gotFail := len(violations) > 0; gotFail != tc.wantFail {
+				t.Fatalf("failed=%v, want %v; violations=%#v", gotFail, tc.wantFail, violations)
+			}
+			if !tc.wantFail {
+				return
+			}
+			violation := violations[0]
+			if violation.Kind != string(GuardAttest) || violation.Deferred != tc.wantDefer || violation.Hint != tc.wantHint || violation.Question != tc.wantPrompt {
+				t.Fatalf("violation = %#v", violation)
+			}
+		})
+	}
+}
+
 func engineSchema() *Schema {
 	return &Schema{
 		Relations: map[string]RelationDef{
@@ -491,6 +587,26 @@ type engineTask struct {
 	sections  map[string]bool
 	archived  bool
 }
+
+type fakeCheckRunner struct {
+	exitCode int
+	stderr   string
+	err      error
+}
+
+func (r fakeCheckRunner) Run(cmd string, timeout time.Duration, env map[string]string) (int, string, error) {
+	if cmd != "just test" {
+		return 99, "wrong command", fmt.Errorf("wrong command %q", cmd)
+	}
+	if timeout != 7*time.Second {
+		return 99, "wrong timeout", fmt.Errorf("wrong timeout %s", timeout)
+	}
+	return r.exitCode, r.stderr, r.err
+}
+
+type errFakeTimeout struct{}
+
+func (errFakeTimeout) Error() string { return "deadline exceeded" }
 
 func (t engineTask) Status() string { return t.status }
 func (t engineTask) Type() string   { return t.typ }

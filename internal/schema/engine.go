@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"time"
 )
 
 type Resolver interface {
@@ -28,7 +29,22 @@ type Violation struct {
 	Relation  string    `json:"relation,omitempty"`
 	Field     string    `json:"field,omitempty"`
 	Section   string    `json:"section,omitempty"`
+	Deferred  bool      `json:"deferred,omitempty"`
+	ExitCode  int       `json:"exit_code,omitempty"`
+	Stderr    string    `json:"stderr_tail,omitempty"`
+	Question  string    `json:"question,omitempty"`
+	AttestID  string    `json:"attest_id,omitempty"`
 	Offending []TaskRef `json:"offending,omitempty"`
+}
+
+type CheckRunner interface {
+	Run(cmd string, timeout time.Duration, env map[string]string) (exitCode int, stderrTail string, err error)
+}
+
+type EvalOptions struct {
+	CheckRunner  CheckRunner
+	CheckEnv     map[string]string
+	Attestations map[string]string
 }
 
 type TaskRef struct {
@@ -51,6 +67,10 @@ type BlockedStatus struct {
 }
 
 func Evaluate(schema *Schema, resolver Resolver, task TaskView, transition Transition) []Violation {
+	return EvaluateWithOptions(schema, resolver, task, transition, EvalOptions{})
+}
+
+func EvaluateWithOptions(schema *Schema, resolver Resolver, task TaskView, transition Transition, opts EvalOptions) []Violation {
 	if schema == nil || task == nil {
 		return nil
 	}
@@ -61,7 +81,7 @@ func Evaluate(schema *Schema, resolver Resolver, task TaskView, transition Trans
 	}
 	violations = append(violations, evaluateImplicitBlocking(schema, resolver, task, typeDef, transition)...)
 	for _, guard := range transition.Guards {
-		if violation, failed := evaluateGuard(schema, resolver, task, guard); failed {
+		if violation, failed := evaluateGuard(schema, resolver, task, guard, opts); failed {
 			violations = append(violations, violation)
 		}
 	}
@@ -69,6 +89,10 @@ func Evaluate(schema *Schema, resolver Resolver, task TaskView, transition Trans
 }
 
 func AvailableTransitions(schema *Schema, resolver Resolver, task TaskView) []TransitionStatus {
+	return AvailableTransitionsWithOptions(schema, resolver, task, EvalOptions{})
+}
+
+func AvailableTransitionsWithOptions(schema *Schema, resolver Resolver, task TaskView, opts EvalOptions) []TransitionStatus {
 	if schema == nil || task == nil {
 		return nil
 	}
@@ -85,7 +109,7 @@ func AvailableTransitions(schema *Schema, resolver Resolver, task TaskView) []Tr
 		if transition.From != task.Status() {
 			continue
 		}
-		violations := Evaluate(schema, resolver, task, transition)
+		violations := EvaluateWithOptions(schema, resolver, task, transition, opts)
 		statuses = append(statuses, TransitionStatus{
 			Transition: transition,
 			Passing:    len(violations) == 0,
@@ -184,7 +208,7 @@ func evaluateImplicitBlocking(schema *Schema, resolver Resolver, task TaskView, 
 	return violations
 }
 
-func evaluateGuard(schema *Schema, resolver Resolver, task TaskView, guard Guard) (Violation, bool) {
+func evaluateGuard(schema *Schema, resolver Resolver, task TaskView, guard Guard, opts EvalOptions) (Violation, bool) {
 	def, ok := guardKindRegistry[guard.Kind]
 	if !ok {
 		return guardViolation(guard, ""), true
@@ -194,6 +218,7 @@ func evaluateGuard(schema *Schema, resolver Resolver, task TaskView, guard Guard
 		Resolver: resolver,
 		Task:     task,
 		Guard:    guard,
+		Options:  opts,
 	})
 	if violation == nil {
 		return Violation{}, false

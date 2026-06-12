@@ -45,6 +45,11 @@ type EngineViolation struct {
 	Relation  string          `json:"relation,omitempty"`
 	Field     string          `json:"field,omitempty"`
 	Section   string          `json:"section,omitempty"`
+	Deferred  bool            `json:"deferred,omitempty"`
+	ExitCode  int             `json:"exit_code,omitempty"`
+	Stderr    string          `json:"stderr_tail,omitempty"`
+	Question  string          `json:"question,omitempty"`
+	AttestID  string          `json:"attest_id,omitempty"`
 	Offending []EngineTaskRef `json:"offending,omitempty"`
 }
 
@@ -137,6 +142,11 @@ func convertEngineViolations(violations []schema.Violation) []EngineViolation {
 			Relation:  violation.Relation,
 			Field:     violation.Field,
 			Section:   violation.Section,
+			Deferred:  violation.Deferred,
+			ExitCode:  violation.ExitCode,
+			Stderr:    violation.Stderr,
+			Question:  violation.Question,
+			AttestID:  violation.AttestID,
 			Offending: convertEngineTaskRefs(violation.Offending),
 		})
 	}

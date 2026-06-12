@@ -42,15 +42,16 @@ type ListResult struct {
 }
 
 type TaskSummary struct {
-	ID       string   `json:"id"`
-	Type     string   `json:"type"`
-	Title    string   `json:"title"`
-	Status   string   `json:"status"`
-	Priority string   `json:"priority,omitempty"`
-	Parent   string   `json:"parent,omitempty"`
-	Assignee string   `json:"assignee,omitempty"`
-	Labels   []string `json:"labels,omitempty"`
-	File     string   `json:"file"`
+	ID          string   `json:"id"`
+	Type        string   `json:"type"`
+	Title       string   `json:"title"`
+	Status      string   `json:"status"`
+	Priority    string   `json:"priority,omitempty"`
+	Parent      string   `json:"parent,omitempty"`
+	Assignee    string   `json:"assignee,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+	File        string   `json:"file"`
+	PendingDeps int      `json:"pending_deps,omitempty"`
 }
 
 func (r ListResult) HumanText(Colorizer) string {

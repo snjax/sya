@@ -25,7 +25,13 @@ type Event struct {
 	To         string             `json:"to,omitempty"`
 	Result     string             `json:"result"`
 	ErrorType  string             `json:"error_type,omitempty"`
+	Attest     []Attestation      `json:"attest,omitempty"`
 	Violations []syaerr.Violation `json:"violations,omitempty"`
+}
+
+type Attestation struct {
+	ID     string `json:"id"`
+	Answer string `json:"answer"`
 }
 
 type Filters struct {

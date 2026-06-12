@@ -35,6 +35,9 @@ func TestInitCreatesSearchIgnoreFiles(t *testing.T) {
 	if code != syaerr.ExitOK || stderr != "" {
 		t.Fatalf("init stdout=%q stderr=%q code=%d", stdout, stderr, code)
 	}
+	if info, err := os.Stat(filepath.Join(root, ".sya", "templates")); err != nil || !info.IsDir() {
+		t.Fatalf("templates dir missing or not a dir: info=%v err=%v", info, err)
+	}
 	for _, name := range fsutil.SearchIgnoreFiles {
 		path := filepath.Join(root, ".sya", name)
 		data, err := os.ReadFile(path)
@@ -155,6 +158,14 @@ func TestCommandGoldens(t *testing.T) {
 		{name: "list_json", json: true, run: func(t *testing.T, root string) (string, string, int) {
 			fixtureProject(t, root)
 			return runCLI(t, root, nil, nil, []string{"--json", "list", "-t", "feature", "--limit", "1"})
+		}},
+		{name: "ready_human", run: func(t *testing.T, root string) (string, string, int) {
+			fixtureProject(t, root)
+			return runCLI(t, root, nil, nil, []string{"ready"})
+		}},
+		{name: "ready_json", json: true, run: func(t *testing.T, root string) (string, string, int) {
+			fixtureProject(t, root)
+			return runCLI(t, root, nil, nil, []string{"--json", "ready"})
 		}},
 		{name: "transitions_human", run: func(t *testing.T, root string) (string, string, int) {
 			fixtureProject(t, root)

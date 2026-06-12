@@ -77,6 +77,8 @@ const (
 	GuardChildrenStatus  GuardKind = "children_status"
 	GuardParentStatus    GuardKind = "parent_status"
 	GuardSectionNonempty GuardKind = "section_nonempty"
+	GuardCheck           GuardKind = "check"
+	GuardAttest          GuardKind = "attest"
 )
 
 type Guard struct {
@@ -204,6 +206,10 @@ type guardYAML struct {
 	Field    string    `yaml:"field,omitempty"`
 	Equals   any       `yaml:"equals,omitempty"`
 	Section  string    `yaml:"section,omitempty"`
+	Run      string    `yaml:"run,omitempty"`
+	Timeout  int       `yaml:"timeout,omitempty"`
+	ID       string    `yaml:"id,omitempty"`
+	Question string    `yaml:"question,omitempty"`
 	Message  string    `yaml:"message,omitempty"`
 	Hint     string    `yaml:"hint,omitempty"`
 }
@@ -231,6 +237,18 @@ func (g *Guard) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	if raw.Section != "" {
 		params["section"] = raw.Section
+	}
+	if raw.Run != "" {
+		params["run"] = raw.Run
+	}
+	if raw.Timeout != 0 {
+		params["timeout"] = raw.Timeout
+	}
+	if raw.ID != "" {
+		params["id"] = raw.ID
+	}
+	if raw.Question != "" {
+		params["question"] = raw.Question
 	}
 	if len(params) > 0 {
 		g.Params = params

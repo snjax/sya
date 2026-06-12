@@ -75,6 +75,8 @@ Prefer executable guards over prose-only rules. Common patterns:
 - `section_nonempty`: require a body section before moving forward.
 - `children_status`: require child tasks in `terminal`.
 - `relation_exists`: require a relation before a transition.
+- `check`: run a deterministic command when the condition is measurable, such as tests, lint, or schema validation.
+- `attest`: ask for a justified yes-answer when the condition is judgment-based and cannot be measured by the tool.
 - blocking relation: set `blocking: true` on a relation such as `depends_on`; the engine adds an implicit guard that targets must be terminal.
 
 Each guard needs:
@@ -85,6 +87,20 @@ hint: "Concrete command or edit to unblock it"
 ```
 
 Errors should tell the agent the next step.
+
+Use `check` for evidence the machine can verify. Keep the command narrow, fast, and deterministic; set a timeout when the check may hang.
+
+Use `attest` sparingly. It should represent a real judgment gate, such as human review, release approval, or an external handoff. Always give it a stable `id`, a clear `question`, a concrete `message`, and a `hint` that tells the agent how to answer:
+
+```yaml
+- kind: attest
+  id: human_review
+  question: "Did a human reviewer approve the result?"
+  message: "Human review must be confirmed."
+  hint: "--attest human_review=\"yes: <justification>\""
+```
+
+Do not use `attest` for facts that can be modeled as fields, sections, relations, or executable checks.
 
 ## Example 1: Simple Kanban
 

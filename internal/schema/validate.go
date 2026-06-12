@@ -198,12 +198,22 @@ func (r *ValidationResult) validateGuards(typeName string, typeDef TypeDef) {
 	for _, key := range sortedTransitionKeys(typeDef.Transitions, typeDef.Pipeline) {
 		transition := typeDef.Transitions[key]
 		path := "types." + typeName + ".transitions." + transitionKey(transition.From, transition.To)
+		attestIDs := make(map[string]int)
 		for guardIndex, guard := range transition.Guards {
 			guardPath := fmt.Sprintf("%s.guards[%d]", path, guardIndex)
 			def, ok := guardKindRegistry[guard.Kind]
 			if !ok {
 				r.addViolation("guard_kind_unknown", guardPath+".kind", fmt.Sprintf("guard kind %q is not supported", guard.Kind))
 				continue
+			}
+			if guard.Kind == GuardAttest {
+				if id, ok := stringParam(guard, "id"); ok {
+					if first, exists := attestIDs[id]; exists {
+						r.addViolation("guard_attest_duplicate", guardPath+".id", fmt.Sprintf("attest id %q duplicates guard %d in transition %s", id, first, transitionKey(transition.From, transition.To)))
+					} else {
+						attestIDs[id] = guardIndex
+					}
+				}
 			}
 			r.Violations = append(r.Violations, def.ValidateDecl(guardValidateContext{
 				Result:    r,
@@ -427,6 +437,29 @@ func stringParam(guard Guard, name string) (string, bool) {
 	}
 	text, ok := value.(string)
 	return text, ok && text != ""
+}
+
+func intParam(guard Guard, name string) (int, bool) {
+	if guard.Params == nil {
+		return 0, false
+	}
+	value, ok := guard.Params[name]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case uint64:
+		return int(typed), true
+	case float64:
+		if typed == float64(int(typed)) {
+			return int(typed), true
+		}
+	}
+	return 0, false
 }
 
 func stringSliceParam(guard Guard, name string) ([]string, bool) {

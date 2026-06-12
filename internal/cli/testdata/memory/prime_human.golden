@@ -20,7 +20,7 @@ relations:
 - superseded_by | reverse supersedes
 
 ready:
-- f00001 [feature/draft/high] Build API
+- f00001 [feature/draft/high] Build API [deps: 1 open]
 - d00001 [task/in_progress/normal] Dependency Task
 - e00001 [epic/open/normal] Platform Epic
 

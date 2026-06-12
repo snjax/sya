@@ -75,6 +75,7 @@ func (a *App) runInit(prefix string, manageAgentDocs bool) (InitResult, error) {
 	dirs := []string{
 		filepath.Join(syaDir, "tasks"),
 		filepath.Join(syaDir, "memory"),
+		filepath.Join(syaDir, "templates"),
 		filepath.Join(syaDir, "wisps"),
 	}
 	for _, dir := range dirs {

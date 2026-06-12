@@ -12,26 +12,36 @@ func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var to string
 		var reason string
+		var attest attestFlagValues
 		cmd := app.command("close <id>...", "Close tasks", cobra.MinimumNArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			return app.withProjectMutationLock(func() (any, error) {
-				return app.runClose(args, to, reason)
+				return app.runClose(args, to, reason, attest)
 			})
 		})
 		cmd.Flags().StringVar(&to, "to", "", "explicit terminal status")
 		cmd.Flags().StringVar(&reason, "reason", "", "close reason")
+		cmd.Flags().Var(&attest, "attest", "attest guard answer: id=\"yes: <justification>\"")
 		return cmd
 	})
 }
 
-func (a *App) runClose(ids []string, explicitTo, reason string) (any, error) {
+func (a *App) runClose(ids []string, explicitTo, reason string, attestValues attestFlagValues) (any, error) {
 	state, err := a.loadProject()
 	if err != nil {
 		return nil, err
 	}
+	attestations, err := parseAttestations(attestValues)
+	if err != nil {
+		return nil, err
+	}
+	if attestations == nil {
+		attestations = map[string]string{}
+	}
+	opts := mutationOptions{Attestations: attestations, ExecuteChecks: true}
 	results := MutationResults{Results: make([]MutationResult, 0, len(ids))}
 	hadError := false
 	for _, id := range ids {
-		result := a.closeOne(state, id, explicitTo, reason)
+		result := a.closeOne(state, id, explicitTo, reason, opts)
 		if !result.OK {
 			hadError = true
 		}
@@ -46,7 +56,7 @@ func (a *App) runClose(ids []string, explicitTo, reason string) (any, error) {
 	return results, nil
 }
 
-func (a *App) closeOne(state *projectState, id, explicitTo, reason string) MutationResult {
+func (a *App) closeOne(state *projectState, id, explicitTo, reason string, opts mutationOptions) MutationResult {
 	t, err := state.Index.Resolve(id)
 	if err != nil {
 		payload := syaerr.Payload(err)
@@ -59,7 +69,7 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 			payload := syaerr.Payload(err)
 			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		}
-		return a.closeToTerminal(state, t, explicitTo, reason)
+		return a.closeToTerminal(state, t, explicitTo, reason, opts)
 	}
 
 	if len(typeDef.Terminal) > 0 {
@@ -68,7 +78,7 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 			payload := syaerr.Payload(err)
 			return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 		} else if ok {
-			return a.closeToTerminal(state, t, first, reason)
+			return a.closeToTerminal(state, t, first, reason, opts)
 		}
 	}
 
@@ -91,7 +101,7 @@ func (a *App) closeOne(state *projectState, id, explicitTo, reason string) Mutat
 	return a.transitionDenied(state, t, "terminal", err)
 }
 
-func (a *App) closeToTerminal(state *projectState, t *task.Task, target, reason string) MutationResult {
+func (a *App) closeToTerminal(state *projectState, t *task.Task, target, reason string, opts mutationOptions) MutationResult {
 	transition, ok, err := transitionForStatus(state.Schema, t, target)
 	if err != nil {
 		payload := syaerr.Payload(err)
@@ -101,16 +111,22 @@ func (a *App) closeToTerminal(state *projectState, t *task.Task, target, reason 
 		err := syaerr.TransitionNotAllowed{Task: t.ID, TaskType: t.Type, From: t.Status, To: target, Allowed: allowedOptions(state.Schema, state.Index.Resolver(), t)}
 		return a.transitionDenied(state, t, target, err)
 	}
-	if violations := checkTransition(state, t, transition); len(violations) > 0 {
+	if violations := checkTransition(state, t, transition, opts); len(violations) > 0 {
 		err := transitionError(state, t, transition, violations)
 		return a.transitionDenied(state, t, transition.To, err)
 	}
 	from := t.Status
+	attest := transitionAttestations(transition, opts.Attestations)
+	if err := appendAttestationLogs(t, a.now(), a.Actor(), attest); err != nil {
+		payload := syaerr.Payload(err)
+		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
+	}
 	if err := moveTask(state, state.Project.Root, t, transition, a.Actor(), a.now(), reason, true); err != nil {
 		payload := syaerr.Payload(err)
 		return MutationResult{ID: t.ID, File: t.File, OK: false, Error: &payload, Err: err}
 	}
-	return a.transitionOK(state, t, from, target, true)
+	a.emitGuardSuccesses(transition, opts)
+	return a.transitionOK(state, t, from, target, true, attest)
 }
 
 func reachableCloseTerminals(state *projectState, t *task.Task, terminals []string) ([]syaerr.TransitionOption, []string, error) {

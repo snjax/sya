@@ -11,21 +11,31 @@ import (
 func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var steal bool
+		var attest attestFlagValues
 		cmd := app.command("claim <id>", "Claim a task", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
 			return app.withProjectMutationLock(func() (any, error) {
-				return app.runClaim(args[0], steal)
+				return app.runClaim(args[0], steal, attest)
 			})
 		})
 		cmd.Flags().BoolVar(&steal, "steal", false, "steal claim from current assignee")
+		cmd.Flags().Var(&attest, "attest", "attest guard answer: id=\"yes: <justification>\"")
 		return cmd
 	})
 }
 
-func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
+func (a *App) runClaim(id string, steal bool, attestValues attestFlagValues) (MutationResult, error) {
 	state, err := a.loadProject()
 	if err != nil {
 		return MutationResult{}, err
 	}
+	attestations, err := parseAttestations(attestValues)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	if attestations == nil {
+		attestations = map[string]string{}
+	}
+	opts := mutationOptions{Attestations: attestations, ExecuteChecks: true}
 	t, err := state.Index.Resolve(id)
 	if err != nil {
 		return MutationResult{}, err
@@ -58,7 +68,11 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 	if !ok {
 		return MutationResult{}, syaerr.NotFound{ID: t.ID}
 	}
-	statuses := schema.AvailableTransitions(state.Schema, state.Index.Resolver(), view)
+	statuses := schema.AvailableTransitionsWithOptions(state.Schema, state.Index.Resolver(), view, schema.EvalOptions{
+		CheckRunner:  shellCheckRunner{dir: state.Project.Root},
+		CheckEnv:     taskGuardEnv(t),
+		Attestations: opts.Attestations,
+	})
 	var blockedWorking *schema.TransitionStatus
 	for _, status := range statuses {
 		if !stringIn(typeDef.Working, status.Transition.To) {
@@ -72,10 +86,15 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		}
 		from := t.Status
 		t.Assignee = actor
+		attest := transitionAttestations(status.Transition, opts.Attestations)
+		if err := appendAttestationLogs(t, a.now(), actor, attest); err != nil {
+			return MutationResult{}, err
+		}
 		if err := moveTask(state, state.Project.Root, t, status.Transition, actor, a.now(), "", true); err != nil {
 			return MutationResult{}, err
 		}
-		return a.transitionOK(state, t, from, status.Transition.To, true), nil
+		a.emitGuardSuccesses(status.Transition, opts)
+		return a.transitionOK(state, t, from, status.Transition.To, true, attest), nil
 	}
 	if blockedWorking != nil {
 		err := transitionError(state, t, blockedWorking.Transition, convertViolationsForTask(state, t, blockedWorking.Violations))

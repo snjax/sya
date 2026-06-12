@@ -179,6 +179,47 @@ Use `--rel relation=id` for nonstandard relations:
 sya create "ADR: storage backend" -t decision --rel affects=<task-id>
 ```
 
+## Analytics & Scaffolding
+
+Use query expressions for precise searches:
+
+```bash
+sya query 'type=feature and not terminal and (age>7d or blocked)' --limit 10
+sya query 'rel.depends_on and priority>=high'
+sya query 'assignee=codex and working'
+```
+
+Use templates when a repeated task shape exists in `.sya/templates/`:
+
+```bash
+sya template list
+sya template show feature-set
+sya template apply feature-set -p name=Streaming --parent <epic-id>
+sya template apply feature-set -p name=Streaming --dry-run
+```
+
+Use project analytics and planning outputs when deciding what to pick up or summarize:
+
+```bash
+sya stats
+sya stale --days 14 --limit 10
+sya duplicates --threshold 0.7 --limit 5
+sya graph --all-relations --format mermaid
+sya graph --epic <id>
+sya roadmap
+sya roadmap -o ROADMAP.md
+```
+
+If a transition reports an `attest` guard, read the question and provide a justified yes-answer only when it is true:
+
+```bash
+sya move <id> audit --attest human_review="yes: reviewed the diff and acceptance criteria with the human reviewer"
+sya close <id> --attest release_ready="yes: tests passed and release notes were checked"
+sya claim <id> --attest handoff_ok="yes: the previous owner explicitly handed this task off"
+```
+
+Do not use attestations as a shortcut around missing evidence. If the answer is not honestly yes, fix the task or ask the human.
+
 ## Wisps
 
 Wisps are freeform notes in `.sya/wisps/`. They are not indexed as tasks, have no schema, and cannot be linked from task relations. Use them for ephemeral checklists and raw thoughts that may become tasks later.

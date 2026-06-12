@@ -1,0 +1,15 @@
+code: 0
+stdout:
+flowchart TD
+  subgraph n_e00001["e00001 Platform Epic [open]"]
+    n_e00001["e00001 Platform Epic [open]"]
+    n_a00001["a00001 Design Alpha [todo]"]
+    n_b00001["b00001 Build Beta [in_progress]"]
+    n_x00001["x00001 Blocked Work [todo]"]
+  end
+  n_c00001["c00001 Archived Task [done]"]
+  n_d00001["d00001 Top Docs [todo]"]
+  n_x00001 -->|depends_on| n_a00001
+  classDef archived stroke-dasharray: 5 5
+  class n_c00001 archived
+stderr:

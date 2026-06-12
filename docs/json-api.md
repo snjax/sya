@@ -43,16 +43,106 @@ Commands that intentionally produce no data may omit `data`.
 {"ok":true,"data":{"tasks":[{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","priority":"high","assignee":"codex","file":".sya/tasks/a3f8c1-streaming.md"}]}}
 ```
 
+### query
+
+`query <expr>` returns the same compact task summary schema as `list`. Supported flags are `--archived` and `--limit`.
+
+```json
+{"ok":true,"data":{"tasks":[{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","priority":"high","parent":"e00001","assignee":"codex","labels":["cli"],"file":".sya/tasks/a3f8c1-streaming.md"}]}}
+```
+
+Example:
+
+```bash
+sya --json query 'type=feature and not terminal and (age>7d or blocked)' --limit 10
+```
+
+### stats
+
+`stats` returns per-type status counts, project totals, quarantine/wisp counts, and active-task age stats.
+
+```json
+{"ok":true,"data":{"types":[{"type":"task","statuses":[{"status":"todo","count":3},{"status":"in_progress","count":1},{"status":"done","count":8}],"total":12}],"totals":{"active":4,"terminal":8,"archived":2,"ready":3,"blocked":1,"dead_end":0,"tasks":14},"quarantined":0,"wisps":2,"age":{"active_average_days":3.5,"active_max_days":9}}}
+```
+
+### stale
+
+`stale` returns active tasks whose latest Log entry, or created time if no Log exists, is older than `--days`. Supported flags are `--days`, `--type/-t`, and `--limit`.
+
+```json
+{"ok":true,"data":{"tasks":[{"id":"a3f8c1","type":"feature","status":"impl","title":"Streaming","days_stale":17,"file":".sya/tasks/a3f8c1-streaming.md"}]}}
+```
+
+### duplicates
+
+`duplicates` returns similar task pairs. Supported flags are `--threshold`, `--all`, and `--limit`.
+
+```json
+{"ok":true,"data":{"pairs":[{"a":{"id":"a3f8c1","type":"feature","title":"Streaming responses","status":"impl","file":".sya/tasks/a3f8c1-streaming-responses.md"},"b":{"id":"b771d2","type":"task","title":"Streaming transport","status":"todo","file":".sya/tasks/b771d2-streaming-transport.md"},"score":0.812,"hint":"sya link a3f8c1 duplicates b771d2"}]}}
+```
+
 ### transitions
 
 ```json
 {"ok":true,"data":{"task":"a3f8c1","status":"spec","transitions":[{"to":"impl","kind":"advance","description":"Start implementation","target_status_description":"Implementation in progress","passing":false,"violations":[{"kind":"section_nonempty","section":"Design","file":"/repo/.sya/tasks/a3f8c1-streaming.md","message":"Design is empty"}]},{"to":"scrapped","kind":"setback","passing":true}]}}
 ```
 
+`check` and `attest` guards can appear as deferred violations in `transitions` and `blocked` payloads:
+
+- `{"kind":"check","deferred":true,...}` means the command was inspected without executing checks, such as through `sya transitions` or `sya move --explain`.
+- `{"kind":"attest","deferred":true,"attest_id":"review","question":"...","hint":"--attest review=\"yes: <justification>\""}` means the transition needs an explicit attestation before a mutation command can pass.
+- `move`, `close`, and `claim` accept repeated `--attest id="yes: <justification>"` flags. The answer must start with `yes:` and include a nontrivial justification. Successful attestations are written to Log and events.
+
+```json
+{"ok":true,"data":{"task":"a3f8c1","status":"review","transitions":[{"to":"done","kind":"advance","description":"Review passed","passing":false,"violations":[{"kind":"attest","message":"Human review must be confirmed","hint":"--attest human_review=\"yes: <justification>\"","deferred":true,"question":"Did a human reviewer approve the result?","attest_id":"human_review"}]}]}}
+```
+
 ### prime
 
 ```json
 {"ok":true,"data":{"project":{"name":"sya","prefix":"sya","root":"/repo"},"schema":{"types":[{"name":"task","pipeline":["todo","in_progress*","done!"]}],"relations":[{"name":"depends_on","reverse":"blocks","graph":"dag","blocking":true}]},"ready":[],"in_progress":[],"memory":[]}}
+```
+
+### template list
+
+```json
+{"ok":true,"data":{"templates":[{"name":"feature-set","description":"Create a feature with spec and follow-up.","path":".sya/templates/feature-set.yml"}]}}
+```
+
+### template show
+
+```json
+{"ok":true,"data":{"template":{"name":"feature-set","description":"Create a feature with spec and follow-up.","params":[{"name":"name","required":true,"description":"Feature name"}],"tasks":[{"key":"spec","type":"docs","title":"Spec {{name}}","sections":{"Description":"Spec for {{name}}"}},{"key":"impl","type":"feature","title":"Build {{name}}","relations":{"depends_on":["spec"]}}],"path":".sya/templates/feature-set.yml"}}}
+```
+
+### template apply
+
+`template apply <name>` returns a key-to-created-task map. `--dry-run` uses the same schema with `dry_run:true` and performs no writes. Supported flags are `--param/-p`, `--parent`, and `--dry-run`.
+
+```json
+{"ok":true,"data":{"template":"feature-set","tasks":{"spec":{"id":"a00001","file":".sya/tasks/a00001-spec-streaming.md","type":"docs","title":"Spec Streaming","parent":"e00001"},"impl":{"id":"b00001","file":".sya/tasks/b00001-build-streaming.md","type":"feature","title":"Build Streaming","parent":"e00001","relations":{"depends_on":["a00001"]}}}}}
+```
+
+Dry-run:
+
+```json
+{"ok":true,"data":{"template":"feature-set","dry_run":true,"tasks":{"spec":{"id":"a00001","file":".sya/tasks/a00001-spec-streaming.md","type":"docs","title":"Spec Streaming"}}}}
+```
+
+### graph
+
+`graph` renders the instance graph. By default it includes blocking relations only. Supported flags are `--rel`, `--all-relations`, `--epic`, `--type/-t`, and `--format mermaid|dot`.
+
+```json
+{"ok":true,"data":{"format":"mermaid","content":"flowchart TD\n  n_a3f8c1[\"a3f8c1 Streaming [impl]\"]\n  n_a3f8c1 -->|depends_on| n_b771d2","nodes":[{"id":"a3f8c1","title":"Streaming","type":"feature","status":"impl","parent":"e00001"},{"id":"b771d2","title":"Transport spike","type":"task","status":"done","archived":true}],"edges":[{"from":"a3f8c1","to":"b771d2","relation":"depends_on"}]}}
+```
+
+### roadmap
+
+`roadmap` returns a deterministic Markdown roadmap and the structured data used to render it. `-o/--output` writes the Markdown to a file and sets `written`.
+
+```json
+{"ok":true,"data":{"project":"sya","epics":[{"task":{"id":"e00001","type":"epic","title":"M2","status":"active","file":".sya/tasks/e00001-m2.md"},"description":"CLI milestone","closed":2,"total":5,"bar":"[████░░░░░░]","children":[{"task":{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","assignee":"codex","file":".sya/tasks/a3f8c1-streaming.md"},"icon":"⛔","blocked":true,"blocked_reason":"blocking relation \"depends_on\" has non-terminal targets"}]}],"groups":[{"type":"docs","tasks":[{"task":{"id":"d00001","type":"docs","title":"README","status":"todo","file":".sya/tasks/d00001-readme.md"},"icon":"·"}]}],"archived_count":3,"markdown":"# sya\n\n## M2 (2/5 closed) [████░░░░░░]\nCLI milestone\n\n- ⛔ a3f8c1 [impl] Streaming @codex — blocked: blocking relation \"depends_on\" has non-terminal targets\n\nArchived tasks: 3"}}
 ```
 
 ## Error Envelope

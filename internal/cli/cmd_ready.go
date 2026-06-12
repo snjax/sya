@@ -40,7 +40,11 @@ func (r ReadyResult) HumanText(Colorizer) string {
 	}
 	lines := make([]string, 0, len(r.Tasks))
 	for _, t := range r.Tasks {
-		lines = append(lines, fmt.Sprintf("%s %-10s %-12s %s", t.ID, t.Type, t.Status, t.Title))
+		line := fmt.Sprintf("%s %-10s %-12s %s", t.ID, t.Type, t.Status, t.Title)
+		if t.PendingDeps > 0 {
+			line += fmt.Sprintf(" [deps: %d open]", t.PendingDeps)
+		}
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -66,12 +70,46 @@ func (a *App) runReady(opts queueOptions) (ReadyResult, error) {
 		if !ok || !schema.Ready(state.Schema, resolver, view) {
 			continue
 		}
-		result.Tasks = append(result.Tasks, summarizeTask(t))
+		summary := summarizeTask(t)
+		summary.PendingDeps = pendingBlockingDeps(state, t)
+		result.Tasks = append(result.Tasks, summary)
 		if opts.Limit > 0 && len(result.Tasks) >= opts.Limit {
 			break
 		}
 	}
 	return result, nil
+}
+
+func pendingBlockingDeps(state *projectState, t *task.Task) int {
+	if state == nil || state.Schema == nil || state.Index == nil || t == nil {
+		return 0
+	}
+	resolver := state.Index.Resolver()
+	count := 0
+	for relationName, relation := range state.Schema.Relations {
+		if !relation.Blocking {
+			continue
+		}
+		for _, targetID := range t.Relations[relationName] {
+			target, ok := resolver.Get(targetID)
+			if !ok || taskViewTerminal(state.Schema, target) {
+				continue
+			}
+			count++
+		}
+	}
+	return count
+}
+
+func taskViewTerminal(sch *schema.Schema, view schema.TaskView) bool {
+	if sch == nil || view == nil {
+		return false
+	}
+	typeDef, ok := sch.Types[view.Type()]
+	if !ok {
+		return false
+	}
+	return view.Archived() || stringIn(typeDef.Terminal, view.Status())
 }
 
 func filteredQueueTasks(idx *index.Index, opts queueOptions) []*task.Task {
