@@ -32,6 +32,10 @@ lint:
     go vet ./...
     test -z "$(gofmt -l .)"
 
+validate-plugin:
+    claude plugin validate .
+    claude plugin validate claude-plugin
+
 fmt:
     gofmt -w .
 

@@ -1,6 +1,6 @@
 ---
 description: Show sya kanban board columns
-argument-hint: [--type T]
+argument-hint: "[--type T]"
 ---
 
 Run `sya board "$@"` from the current repository.

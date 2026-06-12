@@ -1,6 +1,6 @@
 ---
 description: Create a sya task
-argument-hint: "Title" [-t type] [-p priority] [--parent id] [--depends-on id]
+argument-hint: '"Title" [-t type] [-p priority] [--parent id] [--depends-on id]'
 ---
 
 Create a task with `sya create`.

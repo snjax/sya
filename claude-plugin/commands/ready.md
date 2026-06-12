@@ -1,6 +1,6 @@
 ---
 description: Show ready sya tasks with no blocking guards
-argument-hint: [--type T] [--label L] [--assignee A] [--limit N]
+argument-hint: "[--type T] [--label L] [--assignee A] [--limit N]"
 ---
 
 Run `sya ready "$@"` from the current repository.

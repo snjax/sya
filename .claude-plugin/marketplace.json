@@ -1,6 +1,8 @@
 {
   "name": "sya",
-  "owner": "snjax",
+  "owner": {
+    "name": "snjax"
+  },
   "plugins": [
     {
       "name": "sya",
