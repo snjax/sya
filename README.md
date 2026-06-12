@@ -8,10 +8,33 @@ schema guards and blocking relations reject invalid moves with actionable human
 or JSON errors. There is no SQL database, daemon, or network service in the core
 CLI. Git is the storage, review, and merge layer.
 
-## Quick Start
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snjax/sya/master/scripts/install.sh | sh
+```
+
+The installer requires Go 1.26 or newer, runs `go install`, copies the binary to
+`~/.local/bin`, and prints `sya version`. It does not use sudo, git, or just.
+
+Overrides:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/snjax/sya/master/scripts/install.sh | SYA_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://raw.githubusercontent.com/snjax/sya/master/scripts/install.sh | SYA_VERSION="latest" sh
+curl -fsSL https://raw.githubusercontent.com/snjax/sya/master/scripts/install.sh | SYA_VERSION="v0.1.0" SYA_INSTALL_DIR="$HOME/bin" sh
+```
+
+Alternative for users who want Go to place the binary in `GOBIN` or
+`$(go env GOPATH)/bin` directly:
 
 ```bash
 go install github.com/snjax/sya/cmd/sya@latest
+```
+
+## Quick Start
+
+```bash
 sya init --prefix myproj
 ```
 

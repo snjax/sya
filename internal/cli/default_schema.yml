@@ -34,6 +34,7 @@ types:
     pipeline: [open, active, done, scrapped]
     terminal: [done, scrapped]
     working: [active]
+    sections: [Description]
     transitions:
       open -> active: {}
       active -> done:
@@ -87,6 +88,7 @@ types:
     pipeline: [open, triage, impl, verify, done, scrapped]
     terminal: [done, scrapped]
     working: [impl, verify]
+    sections: [Description]
     fields:
       severity: {type: enum, values: [critical, major, minor], default: major}
     transitions:
@@ -104,6 +106,7 @@ types:
     pipeline: [todo, writing, done]
     terminal: [done]
     working: [writing]
+    sections: [Description]
     transitions:
       todo -> writing: {}
       writing -> done: {}
@@ -126,6 +129,7 @@ types:
     pipeline: [todo, in_progress, done, scrapped]
     terminal: [done, scrapped]
     working: [in_progress]
+    sections: [Description]
     transitions:
       todo -> in_progress: {}
       in_progress -> done: {}

@@ -186,6 +186,58 @@ func TestCreateFlagsAndErrors(t *testing.T) {
 			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
 		}
 	})
+	t.Run("sectionless type doctor clean", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		addSectionlessNoteType(t, root)
+
+		stdout, stderr, code := runCLI(t, root, []string{"n00001"}, nil, []string{"create", "No Sections", "-t", "note"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "created n00001") {
+			t.Fatalf("create stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+		data, err := os.ReadFile(filepath.Join(root, ".sya", "tasks", "n00001-no-sections.md"))
+		if err != nil {
+			t.Fatalf("read created task: %v", err)
+		}
+		if strings.Contains(string(data), "## Description") {
+			t.Fatalf("sectionless task contains Description section:\n%s", data)
+		}
+		if !strings.Contains(string(data), "## Log\n- 2026-01-02T03:04:05Z @unknown: created\n") {
+			t.Fatalf("sectionless task missing creation Log:\n%s", data)
+		}
+
+		stdout, stderr, code = runCLI(t, root, nil, nil, []string{"doctor"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "doctor: clean") {
+			t.Fatalf("doctor stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+	})
+	t.Run("description rejected for sectionless type", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		addSectionlessNoteType(t, root)
+
+		_, stderr, code := runCLI(t, root, []string{"n00001"}, nil, []string{"create", "Bad", "-t", "note", "-d", ""})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, `type "note" does not declare section "Description"`) {
+			t.Fatalf("stderr=%q code=%d", stderr, code)
+		}
+	})
+	t.Run("description file rejected for sectionless type", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		addSectionlessNoteType(t, root)
+		desc := filepath.Join(root, "desc.md")
+		if err := os.WriteFile(desc, nil, 0o644); err != nil {
+			t.Fatalf("write desc: %v", err)
+		}
+
+		_, stderr, code := runCLI(t, root, []string{"n00001"}, nil, []string{"create", "Bad", "-t", "note", "--description-file", desc})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, `type "note" does not declare section "Description"`) {
+			t.Fatalf("stderr=%q code=%d", stderr, code)
+		}
+	})
 	t.Run("batch from stdin", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
@@ -308,6 +360,29 @@ func createSeedTask(t *testing.T, root, id, title string, args ...string) {
 	_, stderr, code := runCLI(t, root, []string{id}, nil, createArgs)
 	if code != syaerr.ExitOK || stderr != "" {
 		t.Fatalf("create seed stderr=%q code=%d", stderr, code)
+	}
+}
+
+func addSectionlessNoteType(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".sya", "schema.yml")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open schema: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close schema: %v", err)
+		}
+	}()
+	if _, err := f.WriteString(`
+  note:
+    pipeline: [open, done]
+    terminal: [done]
+    transitions:
+      open -> done: {}
+`); err != nil {
+		t.Fatalf("append schema type: %v", err)
 	}
 }
 

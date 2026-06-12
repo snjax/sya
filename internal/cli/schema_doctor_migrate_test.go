@@ -227,6 +227,9 @@ func addTaskDescriptionSection(t *testing.T, root string) {
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
+	if strings.Contains(string(data), "  task:\n    pipeline:") && strings.Contains(string(data), "    sections: [Description]\n    transitions:") {
+		return
+	}
 	updated := strings.Replace(string(data), "  task:\n    pipeline:", "  task:\n    sections: [Description]\n    pipeline:", 1)
 	if updated == string(data) {
 		t.Fatalf("failed to add task sections")

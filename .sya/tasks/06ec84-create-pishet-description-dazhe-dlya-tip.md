@@ -2,7 +2,7 @@
 id: 06ec84
 type: bug
 title: "create пишет ## Description даже для типов без объявленной секции — мгновенный section_unknown в doctor"
-status: open
+status: done
 priority: normal
 created: "2026-06-12T02:36:37.389952341Z"
 schema_version: 1
@@ -12,3 +12,6 @@ schema_version: 1
 
 ## Log
 - 2026-06-12T02:36:37Z @snjax: created
+- 2026-06-12T02:42:54Z @snjax: open -> impl
+- 2026-06-12T02:48:29Z @snjax: impl -> verify
+- 2026-06-12T02:48:29Z @snjax: verify -> done

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/goccy/go-yaml"
 	"github.com/snjax/sya/internal/index"
@@ -27,6 +26,7 @@ func init() {
 					return nil, syaerr.Usage{Message: "create requires exactly one title"}
 				}
 				opts.Title = args[0]
+				opts.DescriptionProvided = cmd.Flags().Changed("description") || cmd.Flags().Changed("description-file")
 			} else if len(args) != 0 {
 				return nil, syaerr.Usage{Message: "create --from-file does not accept title args"}
 			}
@@ -49,27 +49,29 @@ func init() {
 }
 
 type createOptions struct {
-	Title           string
-	Type            string
-	Priority        string
-	Parent          string
-	Relations       stringList
-	DependsOn       stringList
-	DiscoveredFrom  stringList
-	Description     string
-	DescriptionFile string
-	FromFile        string
-	Fields          stringList
+	Title               string
+	Type                string
+	Priority            string
+	Parent              string
+	Relations           stringList
+	DependsOn           stringList
+	DiscoveredFrom      stringList
+	Description         string
+	DescriptionFile     string
+	DescriptionProvided bool
+	FromFile            string
+	Fields              stringList
 }
 
 type batchCreateSpec struct {
-	Title       string              `yaml:"title" json:"title"`
-	Type        string              `yaml:"type" json:"type"`
-	Priority    string              `yaml:"priority" json:"priority"`
-	Parent      string              `yaml:"parent" json:"parent"`
-	Relations   map[string][]string `yaml:"relations" json:"relations"`
-	Description string              `yaml:"description" json:"description"`
-	Fields      map[string]any      `yaml:"fields" json:"fields"`
+	Title               string              `yaml:"title" json:"title"`
+	Type                string              `yaml:"type" json:"type"`
+	Priority            string              `yaml:"priority" json:"priority"`
+	Parent              string              `yaml:"parent" json:"parent"`
+	Relations           map[string][]string `yaml:"relations" json:"relations"`
+	Description         string              `yaml:"description" json:"description"`
+	DescriptionProvided bool                `yaml:"-" json:"-"`
+	Fields              map[string]any      `yaml:"fields" json:"fields"`
 }
 
 type CreateResult struct {
@@ -146,13 +148,14 @@ func (a *App) createSpecFromOptions(opts createOptions) (batchCreateSpec, error)
 		return batchCreateSpec{}, err
 	}
 	return batchCreateSpec{
-		Title:       opts.Title,
-		Type:        opts.Type,
-		Priority:    opts.Priority,
-		Parent:      opts.Parent,
-		Relations:   relations,
-		Description: description,
-		Fields:      fields,
+		Title:               opts.Title,
+		Type:                opts.Type,
+		Priority:            opts.Priority,
+		Parent:              opts.Parent,
+		Relations:           relations,
+		Description:         description,
+		DescriptionProvided: opts.DescriptionProvided,
+		Fields:              fields,
 	}, nil
 }
 
@@ -242,6 +245,11 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if err != nil {
 		return CreateResult{}, err
 	}
+	if (spec.DescriptionProvided || spec.Description != "") && !typeDeclaresSection(typeDef, "Description") {
+		return CreateResult{}, syaerr.Usage{
+			Message: fmt.Sprintf("type %q does not declare section %q; --description requires that section in schema types.%s.sections", taskType, "Description", taskType),
+		}
+	}
 	id, err := a.newID(a.existingIDs(state.Index), task.DefaultIDLength)
 	if err != nil {
 		return CreateResult{}, err
@@ -252,7 +260,6 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	}
 	file := filepath.ToSlash(filepath.Join(".sya", "tasks", name+".md"))
 	created := a.now().UTC()
-	body := createBody(spec.Description, created, a.Actor())
 	t := &task.Task{
 		ID:            id,
 		Type:          taskType,
@@ -264,7 +271,7 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 		Fields:        spec.Fields,
 		Created:       created,
 		SchemaVersion: state.Schema.SchemaVersion,
-		Body:          task.NewBody([]byte(body), nil),
+		Body:          createBody(typeDef, spec.Description),
 		File:          file,
 	}
 	if t.Relations == nil {
@@ -272,6 +279,9 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	}
 	if t.Fields == nil {
 		t.Fields = make(map[string]any)
+	}
+	if err := appendTaskLog(t, created, a.Actor(), "created"); err != nil {
+		return CreateResult{}, err
 	}
 	if err := writeTask(state.Project.Root, t); err != nil {
 		return CreateResult{}, err
@@ -328,12 +338,31 @@ func validateCreateRelations(idx *index.Index, sch *schema.Schema, sourceType st
 	return relations, nil
 }
 
-func createBody(description string, created time.Time, actor string) string {
-	description = strings.TrimRight(description, "\n")
-	if description == "" {
-		description = "TODO"
+func typeDeclaresSection(typeDef schema.TypeDef, name string) bool {
+	for _, section := range typeDef.Sections {
+		if section == name {
+			return true
+		}
 	}
-	return fmt.Sprintf("## Description\n%s\n\n## Log\n- %s @%s: created\n", description, created.UTC().Format(time.RFC3339), actor)
+	return false
+}
+
+func createBody(typeDef schema.TypeDef, description string) task.Body {
+	raw := make([]byte, 0)
+	sections := make([]task.Section, 0, len(typeDef.Sections))
+	for i, name := range typeDef.Sections {
+		content := "TODO"
+		if name == "Description" && description != "" {
+			content = strings.TrimRight(description, "\n")
+		}
+		sectionRaw := []byte(fmt.Sprintf("## %s\n%s\n", name, content))
+		if i+1 < len(typeDef.Sections) {
+			sectionRaw = append(sectionRaw, '\n')
+		}
+		raw = append(raw, sectionRaw...)
+		sections = append(sections, task.Section{Name: name, Raw: sectionRaw})
+	}
+	return task.NewBody(raw, sections)
 }
 
 func readInputFile(path string, stdin io.Reader) ([]byte, error) {
