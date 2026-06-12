@@ -47,6 +47,22 @@ func TestInitCreatesSearchIgnoreFiles(t *testing.T) {
 	}
 }
 
+func TestInitNoAgentsMD(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"init", "--no-agents-md"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("init stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("AGENTS.md should not be created with --no-agents-md, err=%v", err)
+	}
+	if strings.Contains(stdout, "Agent docs:") {
+		t.Fatalf("init output should not list agent docs with --no-agents-md:\n%s", stdout)
+	}
+}
+
 func TestSlugify(t *testing.T) {
 	t.Parallel()
 

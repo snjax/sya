@@ -291,17 +291,23 @@ func FixSearchIgnoreFilesWith(writer Writer, projectDir string, report Report) (
 	}
 	var changes []Change
 	for _, finding := range report.Findings {
-		if finding.Kind != "search_ignore_missing" || finding.Path == "" {
+		if (finding.Kind != "search_ignore_missing" && finding.Kind != "search_ignore_overbroad") || finding.Path == "" {
 			continue
 		}
 		path := resolvePath(projectDir, finding.Path)
 		if err := writer.WriteFile(path, []byte(fsutil.SearchIgnoreContent), 0o644); err != nil {
 			return nil, err
 		}
+		action := "create_search_ignore"
+		message := "created search ignore file"
+		if finding.Kind == "search_ignore_overbroad" {
+			action = "update_search_ignore"
+			message = "updated search ignore file"
+		}
 		changes = append(changes, Change{
 			Path:    finding.Path,
-			Action:  "create_search_ignore",
-			Message: "created search ignore file",
+			Action:  action,
+			Message: message,
 		})
 	}
 	return changes, nil

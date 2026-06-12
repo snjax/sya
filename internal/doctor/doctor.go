@@ -259,12 +259,23 @@ func (r *runner) checkRelationCycle(relation string) {
 func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
 	for _, name := range fsutil.SearchIgnoreFiles {
 		filePath := runtimePath(projectDir, name)
-		if _, err := fs.Stat(fsys, filePath); err != nil {
+		data, err := fs.ReadFile(fsys, filePath)
+		if err != nil {
 			r.add(Finding{
 				Kind:     "search_ignore_missing",
 				Severity: SeverityInfo,
 				Path:     filePath,
-				Message:  filePath + " should exist to keep search tools from indexing raw sya data",
+				Message:  filePath + " should exist to keep search tools from indexing the sya issues database",
+				Fixable:  true,
+			})
+			continue
+		}
+		if fsutil.IsLegacySearchIgnoreContent(data) {
+			r.add(Finding{
+				Kind:     "search_ignore_overbroad",
+				Severity: SeverityInfo,
+				Path:     filePath,
+				Message:  "overly broad ignore hides schema from agents",
 				Fixable:  true,
 			})
 		}

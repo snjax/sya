@@ -1,2 +1,5 @@
-# keep agents on the CLI: search tools must not index raw sya data
-*
+# sya issues database: use the sya CLI, not direct file reads
+tasks/
+wisps/
+events.jsonl
+.lock

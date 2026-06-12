@@ -72,6 +72,6 @@ skipping `state --wait`; research prompts without the RESEARCH header.
 After major milestones: pet project in /tmp driven by a coding agent that must
 use sya for all tracking (AGENTS.md pattern). Analyze `.sya/events.jsonl`
 (denied transitions = UX signal), agent transcripts, and raw-file discipline
-(`.sya/.ignore` keeps grep-based agents on the CLI). Agent not using a feature
-it should — that's a bug too. Cheap smokes on Codex, final smokes on Claude
-subagents.
+(`.sya/.ignore` keeps grep-based agents out of the tasks database while schema
+and config stay observable). Agent not using a feature it should — that's a bug
+too. Cheap smokes on Codex, final smokes on Claude subagents.

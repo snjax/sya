@@ -1,5 +1,7 @@
 code: 0
 stdout:
 Initialized sya project at $ROOT/.sya
+Agent docs:
+- created $ROOT/AGENTS.md (created managed sya block)
 Suggested hook: run `sya doctor` from your pre-commit hook before committing .sya changes.
 stderr:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/syaerr"
@@ -14,26 +15,42 @@ import (
 func init() {
 	registerCommand(func(app *App) *cobra.Command {
 		var prefix string
+		var noAgentsMD bool
 		cmd := app.command("init", "Initialize a sya project", cobra.NoArgs, func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runInit(prefix)
+			return app.runInit(prefix, !noAgentsMD)
 		})
 		cmd.Flags().StringVar(&prefix, "prefix", "sya", "task id display prefix")
+		cmd.Flags().BoolVar(&noAgentsMD, "no-agents-md", false, "do not create or update AGENTS.md/CLAUDE.md")
 		return cmd
 	})
 }
 
 type InitResult struct {
-	Root       string   `json:"root"`
-	SyaDir     string   `json:"sya_dir"`
-	Created    []string `json:"created"`
-	Suggestion string   `json:"suggestion"`
+	Root       string           `json:"root"`
+	SyaDir     string           `json:"sya_dir"`
+	Created    []string         `json:"created"`
+	AgentDocs  []AgentDocChange `json:"agent_docs,omitempty"`
+	Suggestion string           `json:"suggestion"`
 }
 
 func (r InitResult) HumanText(Colorizer) string {
-	return fmt.Sprintf("Initialized sya project at %s\n%s", r.SyaDir, r.Suggestion)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Initialized sya project at %s\n", r.SyaDir))
+	if len(r.AgentDocs) > 0 {
+		b.WriteString("Agent docs:\n")
+		for _, change := range r.AgentDocs {
+			b.WriteString(fmt.Sprintf("- %s %s", change.Action, change.Path))
+			if change.Message != "" {
+				b.WriteString(" (" + change.Message + ")")
+			}
+			b.WriteByte('\n')
+		}
+	}
+	b.WriteString(r.Suggestion)
+	return b.String()
 }
 
-func (a *App) runInit(prefix string) (InitResult, error) {
+func (a *App) runInit(prefix string, manageAgentDocs bool) (InitResult, error) {
 	root := a.workDir
 	if root == "" {
 		var err error
@@ -92,10 +109,18 @@ func (a *App) runInit(prefix string) (InitResult, error) {
 	if err := appendGitignoreRuntime(root); err != nil {
 		return InitResult{}, err
 	}
+	var agentDocs []AgentDocChange
+	if manageAgentDocs {
+		agentDocs, err = EnsureAgentDocs(root, AgentDocOptions{})
+		if err != nil {
+			return InitResult{}, err
+		}
+	}
 	return InitResult{
 		Root:       root,
 		SyaDir:     syaDir,
 		Created:    created,
+		AgentDocs:  agentDocs,
 		Suggestion: "Suggested hook: run `sya doctor` from your pre-commit hook before committing .sya changes.",
 	}, nil
 }

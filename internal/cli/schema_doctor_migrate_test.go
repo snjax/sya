@@ -176,6 +176,54 @@ func TestDoctorFindsAndFixesMissingSearchIgnoreFiles(t *testing.T) {
 	}
 }
 
+func TestDoctorFindsAndFixesLegacySearchIgnoreFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	legacyContent := []byte("# keep agents on the CLI: search tools must not index raw sya data\n*\n")
+	for _, name := range fsutil.SearchIgnoreFiles {
+		if err := os.WriteFile(filepath.Join(root, ".sya", name), legacyContent, 0o644); err != nil {
+			t.Fatalf("write legacy %s: %v", name, err)
+		}
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"doctor"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("doctor stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if count := strings.Count(stdout, "search_ignore_overbroad"); count != 2 {
+		t.Fatalf("overbroad search ignore findings = %d, want 2\n%s", count, stdout)
+	}
+	if !strings.Contains(stdout, "info") ||
+		!strings.Contains(stdout, "[fixable]") ||
+		!strings.Contains(stdout, "overly broad ignore hides schema from agents") {
+		t.Fatalf("doctor finding should be info, fixable, and descriptive:\n%s", stdout)
+	}
+
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"doctor", "--fix"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("doctor --fix stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if !strings.Contains(stdout, "update_search_ignore .sya/.ignore") || !strings.Contains(stdout, "update_search_ignore .sya/.rgignore") {
+		t.Fatalf("doctor --fix missing update changes:\n%s", stdout)
+	}
+	for _, name := range fsutil.SearchIgnoreFiles {
+		data, err := os.ReadFile(filepath.Join(root, ".sya", name))
+		if err != nil {
+			t.Fatalf("read fixed %s: %v", name, err)
+		}
+		if string(data) != fsutil.SearchIgnoreContent {
+			t.Fatalf("fixed %s content = %q, want %q", name, data, fsutil.SearchIgnoreContent)
+		}
+	}
+
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"doctor"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "doctor: clean") {
+		t.Fatalf("doctor after fix stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
 func migrateFixtureProject(t *testing.T, root string) {
 	t.Helper()
 	initProject(t, root)

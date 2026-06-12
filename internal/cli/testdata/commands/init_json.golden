@@ -1,4 +1,4 @@
 code: 0
 stdout:
-{"ok":true,"data":{"root":"$ROOT","sya_dir":"$ROOT/.sya","created":["$ROOT/.sya/config.yml","$ROOT/.sya/schema.yml","$ROOT/.sya/.ignore","$ROOT/.sya/.rgignore"],"suggestion":"Suggested hook: run `sya doctor` from your pre-commit hook before committing .sya changes."}}
+{"ok":true,"data":{"root":"$ROOT","sya_dir":"$ROOT/.sya","created":["$ROOT/.sya/config.yml","$ROOT/.sya/schema.yml","$ROOT/.sya/.ignore","$ROOT/.sya/.rgignore"],"agent_docs":[{"path":"$ROOT/AGENTS.md","action":"created","message":"created managed sya block"}],"suggestion":"Suggested hook: run `sya doctor` from your pre-commit hook before committing .sya changes."}}
 stderr:
