@@ -1,0 +1,5 @@
+project: sya
+prefix: sya
+id_length: 6
+archive:
+  after_days: 30

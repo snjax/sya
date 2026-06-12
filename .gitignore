@@ -10,6 +10,6 @@ PRD.md
 .vscode/
 *.swp
 
-# Dolt database files (added by bd init)
-.dolt/
-*.db
+.sya/events.jsonl
+.sya/wisps/
+.sya/.lock

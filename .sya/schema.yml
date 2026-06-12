@@ -1,0 +1,155 @@
+schema_version: 1
+
+description: >
+  Процесс разработки sya. Роли: Tech Lead (Claude) пишет спеки, ревьюит,
+  двигает статусы и проводит аудит — кода не пишет; Developer (Codex via
+  codex-ctl) реализует и пишет тесты. Тесты гоняются локально после каждой
+  правки: PATH=/usr/bin:$PATH just test && just lint. Три яруса тестов
+  обязательны и идут по порядку; аудит — финальный гейт перед done.
+  Подробности процесса и codex-ctl шаблоны: docs/dev-process.md.
+
+defaults:
+  type: task
+
+relations:
+  depends_on:
+    description: "Зависимость по работе: цель должна быть закрыта раньше"
+    reverse: blocks
+    graph: dag
+    blocking: true
+  discovered_from:
+    description: "Провенанс: найдено при работе над другой задачей"
+    reverse: discovered
+    graph: dag
+  relates: {symmetric: true}
+  superseded_by:
+    description: "Решение заменено новым решением"
+    reverse: supersedes
+    from: [decision]
+    to: [decision]
+
+types:
+  epic:
+    description: "Контейнер этапа работ (milestone)"
+    container: true
+    children: [task, bug]
+    pipeline: [open, active, done, scrapped]
+    statuses:
+      open: "Создан, работа не начата"
+      active: "Дочерние задачи в работе"
+      done: "Все дети закрыты"
+      scrapped: "Этап отменён, причина в Log"
+    terminal: [done, scrapped]
+    working: [active]
+    transitions:
+      open -> active:
+        description: "Работа над этапом началась"
+      active -> done:
+        description: "Все дочерние задачи в терминальных статусах"
+        guards:
+          - kind: children_status
+            in: [terminal]
+            message: "Есть незакрытые дочерние задачи"
+            hint: "sya list --parent <epic-id> и закройте/отмените открытые"
+      "* -> scrapped": {}
+
+  task:
+    description: "Единица работы: спека → реализация → три яруса тестов → аудит"
+    pipeline: [open, spec, impl, unit_test, func_test, integ_test, audit, done, scrapped]
+    statuses:
+      open: "Создана, не начата"
+      spec: "Пишется/ревьюится спецификация (раздел PRD, дизайн, сигнатуры)"
+      impl: "Реализация (Codex); компилируется, just lint чистый"
+      unit_test: "Юнит-тесты: go test ./... -count=1, table-driven + golden + fuzz-сиды"
+      func_test: "Функциональные тесты: чёрный ящик против собранного bin/sya"
+      integ_test: "Интеграционные тесты: настоящие git-сценарии (merge/rebase/гонки)"
+      audit: "Аудит (RESEARCH, без правок): баги, сложность, bloat, SOLID"
+      done: "Аудит чист, код закоммичен"
+      scrapped: "Отменена, причина в Log"
+    terminal: [done, scrapped]
+    working: [impl, unit_test, func_test, integ_test]
+    sections: [Description]
+    transitions:
+      open -> spec:
+        description: "Работа начинается — тех-лид пишет/ревьюит спеку"
+      spec -> impl:
+        description: "Спека утверждена — Codex реализует"
+      impl -> unit_test:
+        description: "Реализация готова: компилируется, lint чистый"
+      unit_test -> func_test:
+        description: "Юнит-тесты зелёные (go test ./... -count=1)"
+      func_test -> integ_test:
+        description: "Функциональные тесты зелёные (just func)"
+      integ_test -> audit:
+        description: "Интеграционные тесты зелёные (just integ)"
+      audit -> done:
+        description: "Аудит чист — коммит со ссылкой (sya-<id>)"
+      impl -> spec:
+        kind: setback
+        description: "Редко: реализация вскрыла ошибку/невозможность спеки"
+      unit_test -> impl:
+        kind: setback
+        description: "Падение юнит-тестов — Codex чинит код"
+        ignore_blocking: [depends_on]
+      func_test -> impl:
+        kind: setback
+        description: "Падение функциональных тестов — чинит и перегоняет оба яруса"
+        ignore_blocking: [depends_on]
+      integ_test -> impl:
+        kind: setback
+        description: "Падение интеграционных тестов — чинит и перегоняет все ярусы"
+        ignore_blocking: [depends_on]
+      audit -> impl:
+        kind: setback
+        description: "Находки аудита (баги/сложность/bloat/SOLID) — фикс и re-audit"
+        ignore_blocking: [depends_on]
+      "* -> scrapped": {}
+
+  bug:
+    description: "Дефект: репро в Description, фикс, перегон всех ярусов тестов"
+    pipeline: [open, impl, verify, done, scrapped]
+    statuses:
+      open: "Зафиксирован с воспроизведением/уликами (fuzz-репродюсер, лог смоука)"
+      impl: "Фикс в работе (Codex); регрессионный тест обязателен"
+      verify: "Полный локальный прогон: just test && just lint (+ fuzz при родстве)"
+      done: "Фикс смержен, регрессионный тест в наборе"
+      scrapped: "Не баг / не воспроизводится, причина в Log"
+    terminal: [done, scrapped]
+    working: [impl, verify]
+    sections: [Description]
+    transitions:
+      open -> impl:
+        description: "Codex берёт фикс в работу"
+      impl -> verify:
+        description: "Фикс готов, регрессионный тест написан"
+      verify -> impl:
+        kind: setback
+        description: "Проверка не подтвердила фикс"
+        ignore_blocking: [depends_on]
+      verify -> done:
+        description: "Все ярусы зелёные"
+      "* -> scrapped": {}
+
+  decision:
+    description: "Архитектурное решение (ADR): контекст, варианты, выбор"
+    pipeline: [proposed, accepted, superseded, rejected]
+    statuses:
+      proposed: "Предложено, обсуждается"
+      accepted: "Принято и действует"
+      superseded: "Заменено новым решением (см. superseded_by)"
+      rejected: "Отклонено, причина в Log"
+    terminal: [superseded, rejected]
+    parked: [accepted]
+    sections: [Description]
+    transitions:
+      proposed -> accepted:
+        description: "Решение принято тех-лидом"
+      proposed -> rejected:
+        description: "Решение отклонено"
+      accepted -> superseded:
+        description: "Принято новое решение взамен"
+        guards:
+          - kind: relation_exists
+            relation: superseded_by
+            message: "Сначала свяжите новое решение через superseded_by"
+            hint: "sya link <this-id> superseded_by <new-decision-id>"

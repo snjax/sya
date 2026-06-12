@@ -151,7 +151,7 @@ sya schema validate
 sya schema docs
 ```
 
-## Example 2: Dev Pipeline From `.beads/WORKFLOWS.md`
+## Example 2: Dev Pipeline (spec → impl → test tiers → audit)
 
 ```yaml
 schema_version: 1
