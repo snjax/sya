@@ -147,15 +147,19 @@ func TestLoadCacheConcurrentWriters(t *testing.T) {
 }
 
 func TestLoadCacheDisabledByEnv(t *testing.T) {
-	t.Setenv("SYA_NO_CACHE", "1")
-	root, cacheDir := cacheFixture(t, "OldTitle", oldCacheTime())
-	_ = loadCached(t, root, cacheDir, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		t.Fatalf("read cache dir: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("cache dir has entries while SYA_NO_CACHE=1: %#v", entries)
+	for _, value := range []string{"1", "0", "false"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("SYA_NO_CACHE", value)
+			root, cacheDir := cacheFixture(t, "OldTitle", oldCacheTime())
+			_ = loadCached(t, root, cacheDir, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+			entries, err := os.ReadDir(cacheDir)
+			if err != nil {
+				t.Fatalf("read cache dir: %v", err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("cache dir has entries while SYA_NO_CACHE=%q: %#v", value, entries)
+			}
+		})
 	}
 }
 
@@ -228,7 +232,7 @@ func sameSizeTaskDoc(title string) string {
 
 func skipIfCacheDisabled(t *testing.T) {
 	t.Helper()
-	if os.Getenv("SYA_NO_CACHE") == "1" {
+	if os.Getenv("SYA_NO_CACHE") != "" {
 		t.Skip("cache behavior test requires cache enabled")
 	}
 }

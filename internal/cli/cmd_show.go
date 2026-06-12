@@ -15,15 +15,19 @@ import (
 
 func init() {
 	registerCommand(func(app *App) *cobra.Command {
-		return app.command("show <id>", "Show a task", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-			return app.runShow(args[0])
+		var thread bool
+		cmd := app.command("show <id>", "Show a task", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
+			return app.runShow(args[0], thread)
 		})
+		cmd.Flags().BoolVar(&thread, "thread", false, "show discovered_from ancestor/discovery tree")
+		return cmd
 	})
 }
 
 type ShowResult struct {
 	Task       TaskCard                `json:"task"`
 	Relations  map[string][]string     `json:"relations,omitempty"`
+	Thread     []ThreadItem            `json:"thread,omitempty"`
 	Sections   []SectionCard           `json:"sections,omitempty"`
 	Memory     []MemorySummary         `json:"memory,omitempty"`
 	Quarantine []index.QuarantinedFile `json:"quarantine,omitempty"`
@@ -40,6 +44,7 @@ type TaskCard struct {
 	Assignee          string         `json:"assignee,omitempty"`
 	Labels            []string       `json:"labels,omitempty"`
 	Fields            map[string]any `json:"fields,omitempty"`
+	Links             []task.Link    `json:"links,omitempty"`
 	Created           string         `json:"created,omitempty"`
 	SchemaVersion     int            `json:"schema_version,omitempty"`
 	Archived          bool           `json:"archived,omitempty"`
@@ -51,7 +56,21 @@ type SectionCard struct {
 	Text string `json:"text"`
 }
 
+type ThreadItem struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	File      string `json:"file"`
+	Depth     int    `json:"depth"`
+	Direction string `json:"direction"`
+	Current   bool   `json:"current,omitempty"`
+}
+
 func (r ShowResult) HumanText(Colorizer) string {
+	if len(r.Thread) > 0 {
+		return renderThread(r.Thread)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s [%s] %s\n", r.Task.ID, r.Task.Status, r.Task.Title)
 	fmt.Fprintf(&b, "type: %s\n", r.Task.Type)
@@ -66,6 +85,20 @@ func (r ShowResult) HumanText(Colorizer) string {
 		b.WriteString("relations:\n")
 		for _, relation := range sortedRelationKeys(r.Relations) {
 			fmt.Fprintf(&b, "  %s: %s\n", relation, strings.Join(r.Relations[relation], ", "))
+		}
+	}
+	if len(r.Task.Links) > 0 {
+		b.WriteString("links:\n")
+		for _, link := range r.Task.Links {
+			target := link.URL
+			if target == "" {
+				target = link.Path
+			}
+			if link.Title != "" {
+				fmt.Fprintf(&b, "  - %s: %s\n", link.Title, target)
+			} else {
+				fmt.Fprintf(&b, "  - %s\n", target)
+			}
 		}
 	}
 	for _, section := range r.Sections {
@@ -86,7 +119,7 @@ func (r ShowResult) HumanText(Colorizer) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (a *App) runShow(id string) (ShowResult, error) {
+func (a *App) runShow(id string, includeThread bool) (ShowResult, error) {
 	state, err := a.loadProject()
 	if err != nil {
 		return ShowResult{}, err
@@ -100,13 +133,17 @@ func (a *App) runShow(id string) (ShowResult, error) {
 		return ShowResult{}, err
 	}
 	relations := relationView(t, state.Index.ReverseEdges()[t.ID])
-	return ShowResult{
+	result := ShowResult{
 		Task:       taskCard(t, statusDescription(state.Schema, t.Type, t.Status)),
 		Relations:  relations,
 		Sections:   sectionCards(t.Body.Sections),
 		Memory:     memoryForTask(notes, t.ID),
 		Quarantine: state.Index.Quarantined(),
-	}, nil
+	}
+	if includeThread {
+		result.Thread = discoveryThread(state.Index, t)
+	}
+	return result, nil
 }
 
 func taskCard(t *task.Task, statusDescription string) TaskCard {
@@ -121,6 +158,7 @@ func taskCard(t *task.Task, statusDescription string) TaskCard {
 		Assignee:          t.Assignee,
 		Labels:            append([]string(nil), t.Labels...),
 		Fields:            t.Fields,
+		Links:             append([]task.Link(nil), t.Links...),
 		Created:           t.Created.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		SchemaVersion:     t.SchemaVersion,
 		Archived:          t.Archived,
@@ -128,14 +166,116 @@ func taskCard(t *task.Task, statusDescription string) TaskCard {
 	}
 }
 
+func discoveryThread(idx *index.Index, t *task.Task) []ThreadItem {
+	ancestors := discoveryAncestors(idx, t, nil)
+	items := make([]ThreadItem, 0, len(ancestors)+1)
+	for i, ancestor := range ancestors {
+		items = append(items, threadItem(ancestor, i, "ancestor", false))
+	}
+	items = append(items, threadItem(t, len(ancestors), "current", true))
+	visited := map[string]bool{t.ID: true}
+	for _, ancestor := range ancestors {
+		visited[ancestor.ID] = true
+	}
+	items = append(items, discoveryDescendants(idx, t.ID, len(ancestors)+1, visited)...)
+	return items
+}
+
+func discoveryAncestors(idx *index.Index, t *task.Task, seen map[string]bool) []*task.Task {
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+	if t == nil || seen[t.ID] {
+		return nil
+	}
+	seen[t.ID] = true
+	parents := append([]string(nil), t.Relations["discovered_from"]...)
+	sort.Strings(parents)
+	if len(parents) == 0 {
+		return nil
+	}
+	parent, err := idx.Resolve(parents[0])
+	if err != nil {
+		return nil
+	}
+	return append(discoveryAncestors(idx, parent, seen), parent)
+}
+
+func discoveryDescendants(idx *index.Index, id string, depth int, seen map[string]bool) []ThreadItem {
+	reverse := idx.ReverseEdges()[id]
+	children := append([]string(nil), reverse["discovered"]...)
+	sort.Strings(children)
+	items := make([]ThreadItem, 0, len(children))
+	for _, childID := range children {
+		if seen[childID] {
+			continue
+		}
+		child, err := idx.Resolve(childID)
+		if err != nil {
+			continue
+		}
+		seen[child.ID] = true
+		items = append(items, threadItem(child, depth, "discovery", false))
+		items = append(items, discoveryDescendants(idx, child.ID, depth+1, seen)...)
+	}
+	return items
+}
+
+func threadItem(t *task.Task, depth int, direction string, current bool) ThreadItem {
+	return ThreadItem{
+		ID:        t.ID,
+		Type:      t.Type,
+		Title:     t.Title,
+		Status:    t.Status,
+		File:      t.File,
+		Depth:     depth,
+		Direction: direction,
+		Current:   current,
+	}
+}
+
+func renderThread(items []ThreadItem) string {
+	lines := make([]string, 0, len(items)+1)
+	lines = append(lines, "thread:")
+	for _, item := range items {
+		marker := "-"
+		switch item.Direction {
+		case "ancestor":
+			marker = "^"
+		case "current":
+			marker = "*"
+		case "discovery":
+			marker = "v"
+		}
+		lines = append(lines, fmt.Sprintf("%s%s %s [%s] %s", strings.Repeat("  ", item.Depth), marker, item.ID, item.Status, item.Title))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func relationView(t *task.Task, reverse map[string][]string) map[string][]string {
-	relations := make(map[string][]string)
+	sets := make(map[string]map[string]struct{})
 	for relation, ids := range t.Relations {
-		relations[relation] = append([]string(nil), ids...)
-		sort.Strings(relations[relation])
+		if sets[relation] == nil {
+			sets[relation] = make(map[string]struct{})
+		}
+		for _, id := range ids {
+			sets[relation][id] = struct{}{}
+		}
 	}
 	for relation, ids := range reverse {
-		relations[relation] = append(relations[relation], ids...)
+		if sets[relation] == nil {
+			sets[relation] = make(map[string]struct{})
+		}
+		for _, id := range ids {
+			sets[relation][id] = struct{}{}
+		}
+	}
+	relations := make(map[string][]string, len(sets))
+	for relation, ids := range sets {
+		relations[relation] = make([]string, 0, len(ids))
+		for id := range ids {
+			relations[relation] = append(relations[relation], id)
+		}
 		sort.Strings(relations[relation])
 	}
 	if len(relations) == 0 {

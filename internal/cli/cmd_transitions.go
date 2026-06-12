@@ -91,7 +91,7 @@ func (a *App) runTransitions(id string) (TransitionsResult, error) {
 			Description:             status.Transition.Description,
 			TargetStatusDescription: typeDef.Statuses[status.Transition.To],
 			Passing:                 status.Passing,
-			Violations:              convertViolations(state, status.Violations),
+			Violations:              convertViolationsForTask(state, t, status.Violations),
 		})
 	}
 	return result, nil

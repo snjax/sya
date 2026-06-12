@@ -24,6 +24,10 @@ func humanErrorText(err error, c Colorizer) string {
 	case "close_ambiguous":
 		renderTransitionOptions(&b, "reachable terminals", payload.Reachable)
 		renderHints(&b, payload.Hints)
+	case "wisp_link_forbidden":
+		if payload.Hint != "" {
+			renderHints(&b, []string{payload.Hint})
+		}
 	}
 	return b.String()
 }

@@ -105,7 +105,7 @@ func expectedTransitionsFromEngine(t *testing.T, state *projectState, id string)
 			Description:             status.Transition.Description,
 			TargetStatusDescription: typeDef.Statuses[status.Transition.To],
 			Passing:                 status.Passing,
-			Violations:              convertViolations(state, status.Violations),
+			Violations:              convertViolationsForTask(state, task, status.Violations),
 		})
 	}
 	return expected

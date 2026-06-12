@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/snjax/sya/internal/task"
@@ -60,18 +61,23 @@ func (a *App) runUpdate(opts updateOptions) (MutationResult, error) {
 		if opts.Parent == "none" {
 			t.Parent = ""
 		} else {
-			parent, err := validateParent(state.Index, state.Schema, t.Type, opts.Parent)
+			parent, err := validateParentWithChildID(state.Index, state.Schema, t.Type, opts.Parent, t.ID)
 			if err != nil {
 				return MutationResult{}, err
 			}
 			t.Parent = parent
 		}
 	}
+	seenFields := make(map[string]struct{}, len(opts.Fields))
 	for _, raw := range opts.Fields {
 		key, value, err := parseKeyValue(raw)
 		if err != nil {
 			return MutationResult{}, err
 		}
+		if _, exists := seenFields[key]; exists {
+			return MutationResult{}, syaerr.Usage{Message: "duplicate field flag: " + key}
+		}
+		seenFields[key] = struct{}{}
 		field, ok := declaredField(typeDef, key)
 		if !ok {
 			return MutationResult{}, syaerr.Usage{Message: "field is not declared for type: " + key}
@@ -94,7 +100,7 @@ func (a *App) runUpdate(opts updateOptions) (MutationResult, error) {
 		if err != nil {
 			return MutationResult{}, err
 		}
-		if err := writeTask(state.Project.Root, changed); err != nil {
+		if err := writeTask(state, changed); err != nil {
 			return MutationResult{}, err
 		}
 	}
@@ -147,3 +153,18 @@ func (a *App) applyUpdateRelations(state *projectState, base *task.Task, rawRela
 	}
 	return nil
 }
+
+type parentCycle struct {
+	Task   string `json:"task,omitempty"`
+	Parent string `json:"parent,omitempty"`
+}
+
+func (e parentCycle) Error() string {
+	if e.Task == "" || e.Parent == "" {
+		return "parent cycle"
+	}
+	return fmt.Sprintf("parent cycle: assigning parent %s would make %s its own ancestor", e.Parent, e.Task)
+}
+
+func (e parentCycle) Type() string  { return "parent_cycle" }
+func (e parentCycle) ExitCode() int { return syaerr.ExitUsage }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -123,10 +124,14 @@ func checkTransition(state *projectState, t *task.Task, transition schema.Transi
 	if !ok {
 		return nil
 	}
-	return convertViolations(state, schema.Evaluate(state.Schema, state.Index.Resolver(), view, transition))
+	return convertViolationsForTask(state, t, schema.Evaluate(state.Schema, state.Index.Resolver(), view, transition))
 }
 
 func convertViolations(state *projectState, violations []schema.Violation) []syaerr.Violation {
+	return convertViolationsForTask(state, nil, violations)
+}
+
+func convertViolationsForTask(state *projectState, source *task.Task, violations []schema.Violation) []syaerr.Violation {
 	out := make([]syaerr.Violation, 0, len(violations))
 	for _, violation := range violations {
 		offending := make([]syaerr.Candidate, 0, len(violation.Offending))
@@ -146,11 +151,16 @@ func convertViolations(state *projectState, violations []schema.Violation) []sya
 			}
 			offending = append(offending, candidate)
 		}
+		file := ""
+		if violation.Section != "" && source != nil && state != nil {
+			file = filepath.Join(state.Project.Root, filepath.FromSlash(source.File))
+		}
 		out = append(out, syaerr.Violation{
 			Kind:      violation.Kind,
 			Field:     violation.Field,
 			Relation:  violation.Relation,
 			Section:   violation.Section,
+			File:      file,
 			Message:   violation.Message,
 			Hint:      violation.Hint,
 			Offending: offending,
@@ -223,7 +233,7 @@ func moveTask(state *projectState, root string, t *task.Task, transition schema.
 		if err := appendTransitionLog(t, now, actor, from, transition.To, string(transition.Kind), reason); err != nil {
 			return err
 		}
-		return writeTask(root, t)
+		return writeTask(state, t)
 	}
 	t.Status = from
 	return nil

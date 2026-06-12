@@ -119,8 +119,41 @@ types:
     transitions:
       todo -> stuck: {}
 `,
-			wantKind:  "nonterminal_dead_end",
-			wantValid: false,
+			wantWarning: "status_dead_end",
+			wantValid:   false,
+		},
+		{
+			name: "parked status may have no outgoing transition",
+			input: `
+schema_version: 1
+defaults: {type: task}
+types:
+  task:
+    pipeline: [todo, parked, done]
+    parked: [parked]
+    terminal: [done]
+    transitions:
+      todo -> parked: {}
+      todo -> done: {}
+`,
+			wantValid: true,
+		},
+		{
+			name: "wildcard only outgoing transition warning",
+			input: `
+schema_version: 1
+defaults: {type: task}
+types:
+  task:
+    pipeline: [todo, doing, done, scrapped]
+    terminal: [done, scrapped]
+    transitions:
+      todo -> doing: {}
+      todo -> done: {}
+      "* -> scrapped": {}
+`,
+			wantWarning: "status_dead_end",
+			wantValid:   true,
 		},
 		{
 			name:      "guard relation declared",

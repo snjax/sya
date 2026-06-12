@@ -1,14 +1,17 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"reflect"
 	"sort"
 	"strings"
 
 	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
+	"github.com/snjax/sya/internal/memory"
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/task"
 )
@@ -38,7 +41,6 @@ type Finding struct {
 }
 
 func Run(fsys fs.FS, projectDir string, sch *schema.Schema, idx *index.Index, opts Options) (Report, error) {
-	_ = opts
 	if idx == nil {
 		loaded, err := index.Load(fsys, projectDir, sch)
 		if err != nil {
@@ -47,11 +49,12 @@ func Run(fsys fs.FS, projectDir string, sch *schema.Schema, idx *index.Index, op
 		idx = loaded
 	}
 
-	runner := runner{schema: sch, index: idx}
-	runner.checkQuarantine()
+	runner := runner{schema: sch, index: idx, strict: opts.Strict}
+	runner.checkQuarantine(fsys)
 	runner.checkIndexWarnings()
 	runner.checkTasks()
 	runner.checkDAGs()
+	runner.checkMemoryTaskRefs(fsys, projectDir)
 	runner.checkRuntimeFiles(fsys, projectDir)
 	runner.sort()
 	return Report{Findings: runner.findings}, nil
@@ -60,23 +63,31 @@ func Run(fsys fs.FS, projectDir string, sch *schema.Schema, idx *index.Index, op
 type runner struct {
 	schema   *schema.Schema
 	index    *index.Index
+	strict   bool
 	findings []Finding
 }
 
-func (r *runner) checkQuarantine() {
+func (r *runner) checkQuarantine(fsys fs.FS) {
 	for _, quarantined := range r.index.Quarantined() {
 		kind := "task_parse_error"
+		fixable := false
 		if strings.Contains(quarantined.Reason, "conflict markers") {
 			kind = "conflict_markers"
+			fixable = r.conflictFixable(fsys, quarantined.Path)
 		}
 		r.add(Finding{
 			Kind:     kind,
 			Severity: SeverityError,
 			Path:     quarantined.Path,
 			Message:  quarantined.Reason,
-			Fixable:  kind == "conflict_markers",
+			Fixable:  fixable,
 		})
 	}
+}
+
+func (r *runner) conflictFixable(fsys fs.FS, filePath string) bool {
+	data, err := fs.ReadFile(fsys, filePath)
+	return err == nil && CanFixMerge(data)
 }
 
 func (r *runner) checkIndexWarnings() {
@@ -128,6 +139,7 @@ func (r *runner) checkTasks() {
 		r.checkParent(t)
 		r.checkRelations(t)
 		r.checkSections(t, typeDef)
+		r.checkDeadEnd(t, typeDef)
 	}
 }
 
@@ -212,6 +224,35 @@ func (r *runner) checkSections(t *task.Task, typeDef schema.TypeDef) {
 			continue
 		}
 		r.taskFinding(t, "section_unknown", SeverityError, fmt.Sprintf("section %q is not declared for type %q", section.Name, t.Type), false)
+	}
+	if !r.strict {
+		return
+	}
+	present := make(map[string]bool, len(t.Body.Sections))
+	for _, section := range t.Body.Sections {
+		present[section.Name] = true
+	}
+	for _, section := range typeDef.Sections {
+		if present[section] {
+			continue
+		}
+		r.taskFinding(t, "section_missing", SeverityWarning, fmt.Sprintf("section %q is declared for type %q but missing", section, t.Type), false)
+	}
+}
+
+func (r *runner) checkDeadEnd(t *task.Task, typeDef schema.TypeDef) {
+	if !contains(typeDef.Pipeline, t.Status) {
+		return
+	}
+	if contains(typeDef.Terminal, t.Status) || contains(typeDef.Parked, t.Status) {
+		return
+	}
+	view, ok := r.index.Resolver().Get(t.ID)
+	if !ok {
+		return
+	}
+	if blocked := schema.Blocked(r.schema, r.index.Resolver(), view); blocked.DeadEnd {
+		r.taskFinding(t, "status_dead_end", SeverityWarning, fmt.Sprintf("active status %q has no available outgoing transition", t.Status), false)
 	}
 }
 
@@ -303,6 +344,56 @@ func (r *runner) checkRuntimeFiles(fsys fs.FS, projectDir string) {
 				Fixable:  false,
 			})
 		}
+	}
+}
+
+func (r *runner) checkMemoryTaskRefs(fsys fs.FS, projectDir string) {
+	dir := runtimePath(projectDir, "memory")
+	err := fs.WalkDir(fsys, dir, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, fs.ErrNotExist) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() || path.Ext(filePath) != ".md" {
+			return nil
+		}
+		data, err := fs.ReadFile(fsys, filePath)
+		if err != nil {
+			return nil
+		}
+		note, err := memory.ParseBytes(data)
+		if err != nil {
+			r.add(Finding{
+				Kind:     "memory_parse_error",
+				Severity: SeverityWarning,
+				Path:     filePath,
+				Message:  err.Error(),
+			})
+			return nil
+		}
+		for _, id := range note.Tasks {
+			if _, err := r.index.Get(id); err == nil {
+				continue
+			}
+			r.add(Finding{
+				Kind:     "memory_task_missing",
+				Severity: SeverityWarning,
+				Path:     filePath,
+				TaskID:   id,
+				Message:  fmt.Sprintf("memory note references missing task %q", id),
+			})
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		r.add(Finding{
+			Kind:     "memory_scan_error",
+			Severity: SeverityWarning,
+			Path:     dir,
+			Message:  err.Error(),
+		})
 	}
 }
 

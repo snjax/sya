@@ -4,6 +4,6 @@ severity kind                       task     path                               
 warning  lock_not_ignored                    .gitignore                         .sya/.lock should be ignored; run sya init in new projects or add .sya/.lock to .gitignore
 
 changes:
-  reassign_id .sya/tasks/<id>-one.md <id> -> <id>
+  reassign_id .sya/tasks/<id>-two.md <id> -> <id>
   update_reference .sya/tasks/<id>-ref.md <id> -> <id>
 stderr:

@@ -141,6 +141,9 @@ func (a *App) createSpecFromOptions(opts createOptions) (batchCreateSpec, error)
 		if err != nil {
 			return batchCreateSpec{}, err
 		}
+		if _, exists := fields[key]; exists {
+			return batchCreateSpec{}, syaerr.Usage{Message: "duplicate field flag: " + key}
+		}
 		fields[key] = parseScalar(value)
 	}
 	relations, err := parseCreateRelations(opts.Relations, opts.DependsOn, opts.DiscoveredFrom)
@@ -237,7 +240,12 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if spec.Priority == "" {
 		spec.Priority = "normal"
 	}
-	parentID, err := validateParent(state.Index, state.Schema, taskType, spec.Parent)
+	if (spec.DescriptionProvided || spec.Description != "") && !typeDeclaresSection(typeDef, "Description") {
+		return CreateResult{}, syaerr.Usage{
+			Message: fmt.Sprintf("type %q does not declare section %q; --description requires that section in schema types.%s.sections", taskType, "Description", taskType),
+		}
+	}
+	fields, err := validateFields(typeDef, spec.Fields)
 	if err != nil {
 		return CreateResult{}, err
 	}
@@ -245,12 +253,11 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if err != nil {
 		return CreateResult{}, err
 	}
-	if (spec.DescriptionProvided || spec.Description != "") && !typeDeclaresSection(typeDef, "Description") {
-		return CreateResult{}, syaerr.Usage{
-			Message: fmt.Sprintf("type %q does not declare section %q; --description requires that section in schema types.%s.sections", taskType, "Description", taskType),
-		}
+	id, err := a.newID(a.existingIDs(state.Index), configuredIDLength(state.Project))
+	if err != nil {
+		return CreateResult{}, err
 	}
-	id, err := a.newID(a.existingIDs(state.Index), task.DefaultIDLength)
+	parentID, err := validateParentWithChildID(state.Index, state.Schema, taskType, spec.Parent, id)
 	if err != nil {
 		return CreateResult{}, err
 	}
@@ -268,7 +275,7 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 		Priority:      spec.Priority,
 		Parent:        parentID,
 		Relations:     relations,
-		Fields:        spec.Fields,
+		Fields:        fields,
 		Created:       created,
 		SchemaVersion: state.Schema.SchemaVersion,
 		Body:          createBody(typeDef, spec.Description),
@@ -283,7 +290,7 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 	if err := appendTaskLog(t, created, a.Actor(), "created"); err != nil {
 		return CreateResult{}, err
 	}
-	if err := writeTask(state.Project.Root, t); err != nil {
+	if err := writeTask(state, t); err != nil {
 		return CreateResult{}, err
 	}
 	state.Index.Add(t)
@@ -291,12 +298,19 @@ func (a *App) createOne(state *projectState, spec batchCreateSpec) (CreateResult
 }
 
 func validateParent(idx *index.Index, sch *schema.Schema, childType, parent string) (string, error) {
+	return validateParentWithChildID(idx, sch, childType, parent, "")
+}
+
+func validateParentWithChildID(idx *index.Index, sch *schema.Schema, childType, parent, childID string) (string, error) {
 	if parent == "" {
 		return "", nil
 	}
 	parentTask, err := idx.Resolve(parent)
 	if err != nil {
 		return "", err
+	}
+	if childID != "" && parentTask.ID == childID {
+		return "", parentCycle{Task: childID, Parent: parentTask.ID}
 	}
 	parentType := sch.Types[parentTask.Type]
 	if !parentType.Container {
@@ -305,7 +319,73 @@ func validateParent(idx *index.Index, sch *schema.Schema, childType, parent stri
 	if !stringIn(parentType.Children, childType) {
 		return "", syaerr.Usage{Message: "parent type does not allow child type: " + childType}
 	}
+	if childID != "" {
+		for ancestorID := parentTask.Parent; ancestorID != ""; {
+			if ancestorID == childID {
+				return "", parentCycle{Task: childID, Parent: parentTask.ID}
+			}
+			ancestor, err := idx.Get(ancestorID)
+			if err != nil {
+				break
+			}
+			ancestorID = ancestor.Parent
+		}
+	}
 	return parentTask.ID, nil
+}
+
+func validateFields(typeDef schema.TypeDef, raw map[string]any) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	fields := make(map[string]any, len(raw))
+	for key, value := range raw {
+		field, ok := declaredField(typeDef, key)
+		if !ok {
+			return nil, syaerr.Usage{Message: "field is not declared for type: " + key}
+		}
+		parsed, err := coerceCreateFieldValue(field, value)
+		if err != nil {
+			return nil, err
+		}
+		fields[key] = parsed
+	}
+	return fields, nil
+}
+
+func coerceCreateFieldValue(field schema.FieldDef, value any) (any, error) {
+	switch field.Type {
+	case "", "string":
+		return fmt.Sprint(value), nil
+	case "bool":
+		parsed, ok := value.(bool)
+		if !ok {
+			return nil, syaerr.Usage{Message: "field expects bool"}
+		}
+		return parsed, nil
+	case "int":
+		parsed, ok := value.(int)
+		if !ok {
+			return nil, syaerr.Usage{Message: "field expects int"}
+		}
+		return parsed, nil
+	case "enum":
+		str := fmt.Sprint(value)
+		if !stringIn(field.Values, str) {
+			return nil, syaerr.Usage{Message: "field value not in enum: " + str}
+		}
+		return str, nil
+	default:
+		return value, nil
+	}
+}
+
+func configuredIDLength(project Project) int {
+	cfg, err := loadConfig(project)
+	if err != nil {
+		return task.DefaultIDLength
+	}
+	return task.ClampIDLength(cfg.IDLength)
 }
 
 func validateCreateRelations(idx *index.Index, sch *schema.Schema, sourceType string, raw map[string][]string) (map[string][]string, error) {
@@ -351,11 +431,14 @@ func createBody(typeDef schema.TypeDef, description string) task.Body {
 	raw := make([]byte, 0)
 	sections := make([]task.Section, 0, len(typeDef.Sections))
 	for i, name := range typeDef.Sections {
-		content := "TODO"
+		content := ""
 		if name == "Description" && description != "" {
 			content = strings.TrimRight(description, "\n")
 		}
-		sectionRaw := []byte(fmt.Sprintf("## %s\n%s\n", name, content))
+		sectionRaw := []byte(fmt.Sprintf("## %s\n%s", name, content))
+		if content != "" {
+			sectionRaw = append(sectionRaw, '\n')
+		}
 		if i+1 < len(typeDef.Sections) {
 			sectionRaw = append(sectionRaw, '\n')
 		}

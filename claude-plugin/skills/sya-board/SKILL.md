@@ -30,7 +30,9 @@ Use this skill when a user asks to create, revise, or explain a `sya` workflow b
    - Add `description` for every type, relation, field, status, and transition.
    - Add `message` and `hint` for every guard.
    - Mark every transition `kind: advance` or `kind: setback`.
+   - Ensure every status is reachable from the initial status.
    - Use DAG relations for dependencies/provenance when cycles would be invalid.
+   - Propose a blocking rule or explicit guard for every relation you add.
    - Add `terminal` for each type. Nonterminal statuses must have outgoing transitions.
 
 3. Validate:
@@ -46,7 +48,7 @@ sya schema docs
 sya schema docs --type feature
 ```
 
-Show the generated docs to the человек for confirmation. They should be able to read the schema as the workflow policy.
+Show the generated docs to the human reviewer for confirmation. They should be able to read the schema as the workflow policy.
 
 5. If tasks already exist:
 
@@ -62,6 +64,8 @@ Then produce a migration plan. Include:
 - whether a mechanical `sya schema migrate ...` can help, or manual edits are needed
 
 Do not silently rewrite existing tasks without user confirmation.
+
+In autonomous mode, if the schema changes mid-task, run `sya doctor`, apply only mechanical migrations such as status renames or schema-version bumps, then confirm with the user before semantic rewrites such as changing task meaning, relations, or body content.
 
 ## Guard Design
 

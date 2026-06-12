@@ -258,10 +258,75 @@ func TestCreateFlagsAndErrors(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		initProject(t, root)
-		batch := "- title: Batch One\n  type: task\n  priority: low\n  fields:\n    estimate: 3\n"
+		batch := "- title: Batch One\n  type: bug\n  priority: low\n  fields:\n    severity: critical\n"
 		stdout, stderr, code := runCLI(t, root, []string{"b00001"}, strings.NewReader(batch), []string{"create", "--from-file", "-"})
 		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "created b00001") {
 			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+	})
+	t.Run("field validation matches schema", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+
+		stdout, stderr, code := runCLI(t, root, []string{"b00001"}, nil, []string{"create", "Bug", "-t", "bug", "--field", "severity=critical"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "created b00001") {
+			t.Fatalf("valid field stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+		_, stderr, code = runCLI(t, root, []string{"x00001"}, nil, []string{"create", "Bad", "-t", "bug", "--field", "severity=urgent"})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, "field value not in enum: urgent") {
+			t.Fatalf("bad enum stderr=%q code=%d", stderr, code)
+		}
+		_, stderr, code = runCLI(t, root, []string{"x00001"}, nil, []string{"create", "Bad", "--field", "estimate=3"})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, "field is not declared for type: estimate") {
+			t.Fatalf("unknown field stderr=%q code=%d", stderr, code)
+		}
+	})
+	t.Run("duplicate field flags rejected", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+
+		_, stderr, code := runCLI(t, root, []string{"x00001"}, nil, []string{"create", "Bad", "-t", "bug", "--field", "severity=critical", "--field", "severity=minor"})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, "duplicate field flag: severity") {
+			t.Fatalf("create stderr=%q code=%d", stderr, code)
+		}
+	})
+	t.Run("id length from config", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		config := filepath.Join(root, ".sya", "config.yml")
+		data, err := os.ReadFile(config)
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		data = []byte(strings.Replace(string(data), "id_length: 6", "id_length: 8", 1))
+		if err := os.WriteFile(config, data, 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		var gotLength int
+		stdout, stderr, code := runCLIWithNewID(t, root, func(existing map[string]struct{}, length int) (string, error) {
+			gotLength = length
+			return "abcd1234", nil
+		}, []string{"create", "Configured ID"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "created abcd1234") {
+			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+		if gotLength != 8 {
+			t.Fatalf("NewID length = %d, want 8", gotLength)
+		}
+	})
+	t.Run("create rejects self parent", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		createSeedTask(t, root, "e00001", "Epic", "-t", "epic")
+
+		_, stderr, code := runCLI(t, root, []string{"e00001"}, nil, []string{"create", "Child", "--parent", "e00001"})
+		if code != syaerr.ExitUsage || !strings.Contains(stderr, "parent cycle") {
+			t.Fatalf("stderr=%q code=%d", stderr, code)
 		}
 	})
 	t.Run("batch updates in-memory index", func(t *testing.T) {
@@ -328,6 +393,59 @@ func TestCreateFlagsAndErrors(t *testing.T) {
 			t.Fatalf("stderr=%q code=%d", stderr, code)
 		}
 	})
+	t.Run("full reference form resolves", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		createSeedTask(t, root, "a00001", "Ref Task")
+		stdout, stderr, code := runCLI(t, root, nil, nil, []string{"show", "sya-a00001"})
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "a00001 [todo] Ref Task") {
+			t.Fatalf("show full ref stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+	})
+	t.Run("json cobra usage envelope", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--json", "show", "--bad-flag"})
+		if code != syaerr.ExitUsage || stderr != "" || !strings.Contains(stdout, `"ok":false`) || !strings.Contains(stdout, `"type":"usage"`) {
+			t.Fatalf("json usage stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+	})
+}
+
+func TestShowRendersLinksAndThread(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Origin")
+	createSeedTask(t, root, "b00001", "Middle", "--discovered-from", "a00001")
+	createSeedTask(t, root, "c00001", "Leaf", "--discovered-from", "b00001")
+	createSeedTask(t, root, "d00001", "Follow Up", "--discovered-from", "b00001")
+	path := taskPathByID(t, root, "b00001")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), "created:", "links:\n  - url: https://example.test/pr/1\n    title: PR 1\n  - path: docs/design.md\ncreated:", 1)
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"show", "b00001"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "links:") || !strings.Contains(stdout, "PR 1: https://example.test/pr/1") || !strings.Contains(stdout, "docs/design.md") {
+		t.Fatalf("show links stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "b00001", "--thread"})
+	for _, want := range []string{"thread:", "^ a00001 [todo] Origin", "* b00001 [todo] Middle", "v c00001 [todo] Leaf", "v d00001 [todo] Follow Up"} {
+		if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, want) {
+			t.Fatalf("show thread missing %q stdout=%q stderr=%q code=%d", want, stdout, stderr, code)
+		}
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"--json", "show", "b00001", "--thread"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, `"links":[`) || !strings.Contains(stdout, `"thread":[`) {
+		t.Fatalf("show thread json stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
 }
 
 func runCLI(t *testing.T, root string, ids []string, stdin *strings.Reader, args []string) (stdout, stderr string, code int) {
@@ -357,6 +475,29 @@ func runCLI(t *testing.T, root string, ids []string, stdin *strings.Reader, args
 			idIndex++
 			return id, nil
 		},
+	})
+	code = app.Execute(args)
+	return out.String(), err.String(), code
+}
+
+func runCLIWithNewID(t *testing.T, root string, newID func(map[string]struct{}, int) (string, error), args []string) (stdout, stderr string, code int) {
+	t.Helper()
+	var out, err bytes.Buffer
+	app := New(Options{
+		Version: "test",
+		Stdout:  &out,
+		Stderr:  &err,
+		WorkDir: root,
+		Env: func(string) string {
+			return ""
+		},
+		GitUser: func(context.Context) (string, error) {
+			return "", errors.New("git user unset")
+		},
+		Now: func() time.Time {
+			return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		},
+		NewID: newID,
 	})
 	code = app.Execute(args)
 	return out.String(), err.String(), code

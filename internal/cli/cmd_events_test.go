@@ -150,8 +150,7 @@ func TestEventAppendErrorWarnsButDoesNotFail(t *testing.T) {
 }
 
 func TestDeniedTransitionAlertHookReceivesJSON(t *testing.T) {
-	t.Parallel()
-
+	before := alertTempFiles(t)
 	root := t.TempDir()
 	initProject(t, root)
 	createSeedTask(t, root, "a00001", "Blocked")
@@ -173,6 +172,7 @@ func TestDeniedTransitionAlertHookReceivesJSON(t *testing.T) {
 	if event.Task != "a00001" || event.Result != events.ResultDenied || event.ErrorType != "transition_blocked" {
 		t.Fatalf("unexpected alert event: %#v", event)
 	}
+	waitForNoNewAlertTempFiles(t, before, 2*time.Second)
 }
 
 func TestAlertHookFailureIgnored(t *testing.T) {
@@ -314,6 +314,43 @@ func waitForFile(t *testing.T, path string, timeout time.Duration) []byte {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func alertTempFiles(t *testing.T) map[string]bool {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "sya-alert-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		out[match] = true
+	}
+	return out
+}
+
+func waitForNoNewAlertTempFiles(t *testing.T, before map[string]bool, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		matches, err := filepath.Glob(filepath.Join(os.TempDir(), "sya-alert-*.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var leaked []string
+		for _, match := range matches {
+			if !before[match] {
+				leaked = append(leaked, match)
+			}
+		}
+		if len(leaked) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("alert temp files leaked: %v", leaked)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

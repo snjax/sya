@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/snjax/sya/internal/task"
@@ -103,6 +104,81 @@ func TestRestoreRoundTripInGitRepo(t *testing.T) {
 	}
 }
 
+func TestRestoreApplyPreservesNonArchivedFlag(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	gitOKCLI(t, root, "init")
+	gitOKCLI(t, root, "config", "user.email", "cli@example.test")
+	gitOKCLI(t, root, "config", "user.name", "CLI Test")
+	gitOKCLI(t, root, "config", "commit.gpgsign", "false")
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Restore Active", "-d", "Original text")
+	gitOKCLI(t, root, "add", ".")
+	gitOKCLI(t, root, "commit", "-m", "original")
+
+	path := findTaskFile(t, root, "a00001")
+	parsed, err := parseTaskFile(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Body = task.NewBody([]byte("## Description\nChanged\n"), []task.Section{{Name: "Description", Raw: []byte("## Description\nChanged\n")}})
+	data, err := task.Serialize(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"restore", "a00001", "--apply"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "restored body") {
+		t.Fatalf("restore apply code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	restored, err := parseTaskFile(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Archived {
+		t.Fatalf("restore --apply set archived on non-archived task:\n%s", restored.Body.Raw)
+	}
+}
+
+func TestArchiveAutoUsesTerminalTransitionAge(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Freshly Closed")
+	path := findTaskFile(t, root, "a00001")
+	parsed, err := parseTaskFile(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Created = time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	data, err := task.Serialize(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, root, nil, []string{"move", "a00001", "in_progress"})
+	mustRun(t, root, nil, []string{"close", "a00001"})
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"archive", "--auto"})
+	if code != syaerr.ExitOK || stderr != "" || strings.Contains(stdout, "a00001") {
+		t.Fatalf("archive --auto code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	reloaded, err := parseTaskFile(t, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Archived {
+		t.Fatalf("freshly closed task was auto-archived:\n%s", reloaded.Body.Raw)
+	}
+}
+
 func TestWispLifecycleAndSquash(t *testing.T) {
 	t.Parallel()
 
@@ -120,7 +196,7 @@ func TestWispLifecycleAndSquash(t *testing.T) {
 	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "Wisp body") {
 		t.Fatalf("show code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	stdout, stderr, code = runCLI(t, root, []string{"t00001"}, nil, []string{"wisp", "squash", "w-abc123", "-t", "feature"})
+	stdout, stderr, code = runCLI(t, root, []string{"t00001"}, nil, []string{"wisp", "squash", "w-abc123"})
 	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "squashed into t00001") {
 		t.Fatalf("squash code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -131,7 +207,7 @@ func TestWispLifecycleAndSquash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Type != "feature" || !strings.Contains(string(created.Body.Raw), "Wisp body") {
+	if created.Type != "task" || !strings.Contains(string(created.Body.Raw), "Wisp body") {
 		t.Fatalf("squashed task invalid: %#v\n%s", created, created.Body.Raw)
 	}
 
@@ -145,6 +221,49 @@ func TestWispLifecycleAndSquash(t *testing.T) {
 	}
 }
 
+func TestWispShowEmptyBodyIsQuiet(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	_, stderr, code := runCLI(t, root, []string{"abc123"}, nil, []string{"wisp", "create", "Empty"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("create code=%d stderr=%q", code, stderr)
+	}
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"wisp", "show", "w-abc123"})
+	if code != syaerr.ExitOK || stderr != "" || strings.Contains(stdout, "created") {
+		t.Fatalf("show empty code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestWispCreateHonorsConfiguredIDLength(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	config := filepath.Join(root, ".sya", "config.yml")
+	data, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	data = []byte(strings.Replace(string(data), "id_length: 6", "id_length: 9", 1))
+	if err := os.WriteFile(config, data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var gotLength int
+	stdout, stderr, code := runCLIWithNewID(t, root, func(existing map[string]struct{}, length int) (string, error) {
+		gotLength = length
+		return "abcdef123", nil
+	}, []string{"wisp", "create", "Configured"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "w-abcdef123") {
+		t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if gotLength != 9 {
+		t.Fatalf("NewID length = %d, want 9", gotLength)
+	}
+}
+
 func TestWispIDsDoNotResolveAsTaskRelations(t *testing.T) {
 	t.Parallel()
 
@@ -153,7 +272,8 @@ func TestWispIDsDoNotResolveAsTaskRelations(t *testing.T) {
 	createSeedTask(t, root, "a00001", "Task")
 	mustRun(t, root, nil, []string{"wisp", "create", "Loose", "-d", "body"})
 	_, stderr, code := runCLI(t, root, nil, nil, []string{"link", "a00001", "depends_on", "w-z00000"})
-	if code != syaerr.ExitLookup || !strings.Contains(stderr, "not found: w-z00000") {
+	if code != syaerr.ExitLookup ||
+		!strings.Contains(stderr, "wisps cannot be linked as task relations") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 }

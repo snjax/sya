@@ -1,4 +1,4 @@
 code: 0
 stdout:
-{"ok":true,"data":{"task":{"id":"f00001","type":"feature","title":"Build API","status":"draft","status_description":"Идея зафиксирована, требования не созрели","priority":"high","parent":"e00001","created":"2026-01-02T03:04:05Z","schema_version":1,"file":".sya/tasks/f00001-build-api.md"},"relations":{"depends_on":["d00001"]},"sections":[{"name":"Description","text":"Feature description"},{"name":"Design","text":"TODO"},{"name":"Acceptance","text":"TODO"},{"name":"Log","text":"- 2026-01-02T03:04:05Z @unknown: created"}]}}
+{"ok":true,"data":{"task":{"id":"f00001","type":"feature","title":"Build API","status":"draft","status_description":"Идея зафиксирована, требования не созрели","priority":"high","parent":"e00001","created":"2026-01-02T03:04:05Z","schema_version":1,"file":".sya/tasks/f00001-build-api.md"},"relations":{"depends_on":["d00001"]},"sections":[{"name":"Description","text":"Feature description"},{"name":"Design","text":""},{"name":"Acceptance","text":""},{"name":"Log","text":"- 2026-01-02T03:04:05Z @unknown: created"}]}}
 stderr:

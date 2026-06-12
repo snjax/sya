@@ -19,6 +19,42 @@ Every successful JSON response is an object with `ok: true` and a command-specif
 
 Commands that intentionally produce no data may omit `data`.
 
+## Success Data Examples
+
+### create
+
+```json
+{"ok":true,"data":{"id":"a3f8c1","file":".sya/tasks/a3f8c1-streaming.md","relations":{"depends_on":["b771d2"]}}}
+```
+
+### show
+
+`show` returns a full task card, computed relations, body sections, optional memory refs, quarantine warnings, and frontmatter links. With `--thread`, `thread` is an ordered tree array for the `discovered_from` chain.
+
+```json
+{"ok":true,"data":{"task":{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","status_description":"Implementation in progress","links":[{"url":"https://example.test/pr/1","title":"PR"}],"file":".sya/tasks/a3f8c1-streaming.md"},"relations":{"depends_on":["b771d2"],"discovered":["c22222"]},"thread":[{"id":"b00000","type":"task","title":"Origin","status":"done","file":".sya/tasks/b00000-origin.md","depth":0,"direction":"ancestor"},{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","file":".sya/tasks/a3f8c1-streaming.md","depth":1,"direction":"current","current":true}],"sections":[{"name":"Description","text":"..."}]}}
+```
+
+### list, ready, blocked
+
+`list` and `ready` return `{"tasks":[...]}` with compact task summaries. `blocked` returns `{"tasks":[{"task":...,"dead_end":false,"transitions":[...]}]}`.
+
+```json
+{"ok":true,"data":{"tasks":[{"id":"a3f8c1","type":"feature","title":"Streaming","status":"impl","priority":"high","assignee":"codex","file":".sya/tasks/a3f8c1-streaming.md"}]}}
+```
+
+### transitions
+
+```json
+{"ok":true,"data":{"task":"a3f8c1","status":"spec","transitions":[{"to":"impl","kind":"advance","description":"Start implementation","target_status_description":"Implementation in progress","passing":false,"violations":[{"kind":"section_nonempty","section":"Design","file":"/repo/.sya/tasks/a3f8c1-streaming.md","message":"Design is empty"}]},{"to":"scrapped","kind":"setback","passing":true}]}}
+```
+
+### prime
+
+```json
+{"ok":true,"data":{"project":{"name":"sya","prefix":"sya","root":"/repo"},"schema":{"types":[{"name":"task","pipeline":["todo","in_progress*","done!"]}],"relations":[{"name":"depends_on","reverse":"blocks","graph":"dag","blocking":true}]},"ready":[],"in_progress":[],"memory":[]}}
+```
+
 ## Error Envelope
 
 Every JSON error response is an object with `ok: false` and an `error` object. The `type` field is stable within a major version.
@@ -114,3 +150,17 @@ Exit code: 4. This is a schema/file validity error for unresolved merge conflict
 ```json
 {"ok":false,"error":{"type":"conflict_markers","message":".sya/tasks/a3f8c1-streaming-responses.md: conflict markers found","path":".sya/tasks/a3f8c1-streaming-responses.md"}}
 ```
+
+### wisp_link_forbidden
+
+Exit code: 2. Wisps are not task relation endpoints; squash them into real tasks first.
+
+```json
+{"ok":false,"error":{"type":"wisp_link_forbidden","message":"wisps cannot be linked as task relations","id":"w-a3f8c1","hint":"sya wisp squash w-a3f8c1 --type T first"}}
+```
+
+## Events JSONL
+
+`.sya/events.jsonl` records transition attempts and denials. `claim` denials may use pseudo-target `working`; `close` denials may use pseudo-target `terminal`. These are not schema statuses; they mean the command could not select a concrete working or terminal target.
+
+`unlink` is idempotent. When the relation edge is absent, JSON success uses `action:"noop"`; when removed, it uses `action:"unlinked"`.

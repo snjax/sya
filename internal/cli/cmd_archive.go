@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func (a *App) runArchive(ids []string, auto bool) (MutationResults, error) {
 			if err := appendTaskLog(t, a.now(), a.Actor(), "archived"); err != nil {
 				return MutationResults{}, err
 			}
-			if err := writeTask(state.Project.Root, t); err != nil {
+			if err := writeTask(state, t); err != nil {
 				return MutationResults{}, err
 			}
 		}
@@ -87,13 +88,48 @@ func (a *App) autoArchiveIDs(state *projectState) ([]string, error) {
 	cutoff := a.now().UTC().Add(-time.Duration(afterDays) * 24 * time.Hour)
 	var ids []string
 	for _, t := range state.Index.Query(index.Query{Archived: boolPtr(false)}) {
-		// PRD §8 defines archive.auto by age; until event timestamps exist,
-		// created is the documented proxy for task age.
-		if isTerminalTask(state, t) && !t.Created.IsZero() && t.Created.Before(cutoff) {
+		if !isTerminalTask(state, t) {
+			continue
+		}
+		basis := terminalEnteredAt(state, t)
+		if basis.IsZero() {
+			basis = t.Created
+		}
+		if !basis.IsZero() && basis.Before(cutoff) {
 			ids = append(ids, t.ID)
 		}
 	}
 	return ids, nil
+}
+
+var logTransitionRE = regexp.MustCompile(`^- ([0-9TZ:\-]+) @[^:]+: .* -> ([^ :↩]+)`)
+
+func terminalEnteredAt(state *projectState, t *task.Task) time.Time {
+	typeDef := state.Schema.Types[t.Type]
+	terminal := make(map[string]bool, len(typeDef.Terminal))
+	for _, status := range typeDef.Terminal {
+		terminal[status] = true
+	}
+	var last time.Time
+	for _, section := range t.Body.Sections {
+		if section.Name != "Log" {
+			continue
+		}
+		for _, line := range strings.Split(sectionText(section), "\n") {
+			match := logTransitionRE.FindStringSubmatch(strings.TrimSpace(line))
+			if len(match) != 3 || !terminal[match[2]] {
+				continue
+			}
+			ts, err := time.Parse(time.RFC3339, match[1])
+			if err != nil {
+				continue
+			}
+			if ts.After(last) {
+				last = ts
+			}
+		}
+	}
+	return last
 }
 
 func isTerminalTask(state *projectState, t *task.Task) bool {

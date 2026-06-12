@@ -39,6 +39,21 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 	if len(typeDef.Working) == 0 {
 		return MutationResult{}, syaerr.Usage{Message: "task type has no working statuses"}
 	}
+	if stringIn(typeDef.Working, t.Status) {
+		fromAssignee := t.Assignee
+		t.Assignee = actor
+		message := "claimed"
+		if steal && fromAssignee != "" && fromAssignee != actor {
+			message = "claim stolen from " + fromAssignee
+		}
+		if err := appendTaskLog(t, a.now(), actor, message); err != nil {
+			return MutationResult{}, err
+		}
+		if err := writeTask(state, t); err != nil {
+			return MutationResult{}, err
+		}
+		return MutationResult{ID: t.ID, File: t.File, Status: t.Status, OK: true}, nil
+	}
 	view, ok := state.Index.Resolver().Get(t.ID)
 	if !ok {
 		return MutationResult{}, syaerr.NotFound{ID: t.ID}
@@ -63,7 +78,7 @@ func (a *App) runClaim(id string, steal bool) (MutationResult, error) {
 		return a.transitionOK(state, t, from, status.Transition.To, true), nil
 	}
 	if blockedWorking != nil {
-		err := transitionError(state, t, blockedWorking.Transition, convertViolations(state, blockedWorking.Violations))
+		err := transitionError(state, t, blockedWorking.Transition, convertViolationsForTask(state, t, blockedWorking.Violations))
 		return a.transitionDenied(state, t, blockedWorking.Transition.To, err), err
 	}
 	err = syaerr.ClaimNotReachable{

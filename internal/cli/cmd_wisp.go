@@ -14,7 +14,6 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/syaerr"
-	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +45,7 @@ type WispResult struct {
 	Body    string `json:"body,omitempty"`
 	Burned  bool   `json:"burned,omitempty"`
 	TaskID  string `json:"task_id,omitempty"`
+	Show    bool   `json:"-"`
 }
 
 type WispResults struct {
@@ -56,6 +56,8 @@ func (r WispResult) HumanText(Colorizer) string {
 	switch {
 	case r.Body != "":
 		return strings.TrimRight(r.Body, "\n")
+	case r.Show:
+		return ""
 	case r.TaskID != "":
 		return fmt.Sprintf("%s: squashed into %s", r.ID, r.TaskID)
 	case r.Burned:
@@ -118,6 +120,7 @@ func (a *App) wispShowCommand() *cobra.Command {
 		}
 		result := wispSummary(w)
 		result.Body = string(w.Body)
+		result.Show = true
 		return result, nil
 	})
 }
@@ -125,9 +128,6 @@ func (a *App) wispShowCommand() *cobra.Command {
 func (a *App) wispSquashCommand() *cobra.Command {
 	var typ string
 	cmd := a.command("squash <id>", "Create a real task from a wisp and burn it", cobra.ExactArgs(1), func(ctx context.Context, cmd *cobra.Command, args []string) (any, error) {
-		if typ == "" {
-			return nil, syaerr.Usage{Message: "wisp squash requires --type"}
-		}
 		return a.withProjectMutationLock(func() (any, error) {
 			return a.runWispSquash(args[0], typ)
 		})
@@ -183,7 +183,7 @@ func (a *App) runWispCreate(title, description, file string) (WispResult, error)
 	for _, w := range wisps {
 		existing[strings.TrimPrefix(w.ID, "w-")] = struct{}{}
 	}
-	rawID, err := a.newID(existing, task.DefaultIDLength)
+	rawID, err := a.newID(existing, configuredIDLength(project))
 	if err != nil {
 		return WispResult{}, err
 	}
@@ -209,6 +209,9 @@ func (a *App) runWispSquash(id, typ string) (WispResult, error) {
 	state, err := a.loadProject()
 	if err != nil {
 		return WispResult{}, err
+	}
+	if typ == "" {
+		typ = defaultTaskType(state.Schema)
 	}
 	w, err := resolveWisp(state.Project, id)
 	if err != nil {

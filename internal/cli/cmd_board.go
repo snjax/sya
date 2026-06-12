@@ -24,10 +24,17 @@ func init() {
 }
 
 type BoardResult struct {
-	Boards             map[string]map[string][]TaskSummary `json:"boards"`
+	Boards             map[string][]BoardColumn            `json:"boards"`
+	BoardTasks         map[string]map[string][]TaskSummary `json:"-"`
 	Order              []string                            `json:"-"`
 	StatusOrder        map[string][]string                 `json:"-"`
 	StatusDescriptions map[string]map[string]string        `json:"-"`
+}
+
+type BoardColumn struct {
+	Status      string        `json:"status"`
+	Description string        `json:"description,omitempty"`
+	Tasks       []TaskSummary `json:"tasks"`
 }
 
 func (r BoardResult) HumanText(Colorizer) string {
@@ -42,7 +49,7 @@ func (r BoardResult) HumanText(Colorizer) string {
 		fmt.Fprintf(&b, "%s\n", typeName)
 		for _, status := range r.StatusOrder[typeName] {
 			fmt.Fprintf(&b, "  %s:\n", formatBoardStatusHeader(status, r.StatusDescriptions[typeName][status]))
-			tasks := r.Boards[typeName][status]
+			tasks := r.BoardTasks[typeName][status]
 			if len(tasks) == 0 {
 				b.WriteString("    -\n")
 				continue
@@ -70,7 +77,7 @@ func (a *App) runBoard(taskType string) (BoardResult, error) {
 			return BoardResult{}, syaerr.Usage{Message: "unknown task type: " + taskType}
 		}
 		if !typeBoardVisible(typeDef) {
-			return BoardResult{Boards: map[string]map[string][]TaskSummary{}}, nil
+			return BoardResult{Boards: map[string][]BoardColumn{}, BoardTasks: map[string]map[string][]TaskSummary{}}, nil
 		}
 		return boardForTypes(state.Index, state.Schema, []string{taskType}), nil
 	}
@@ -87,7 +94,8 @@ func (a *App) runBoard(taskType string) (BoardResult, error) {
 
 func boardForTypes(idx *index.Index, sch *schema.Schema, typeNames []string) BoardResult {
 	result := BoardResult{
-		Boards:             make(map[string]map[string][]TaskSummary, len(typeNames)),
+		Boards:             make(map[string][]BoardColumn, len(typeNames)),
+		BoardTasks:         make(map[string]map[string][]TaskSummary, len(typeNames)),
 		Order:              append([]string(nil), typeNames...),
 		StatusOrder:        make(map[string][]string, len(typeNames)),
 		StatusDescriptions: make(map[string]map[string]string, len(typeNames)),
@@ -99,17 +107,24 @@ func boardForTypes(idx *index.Index, sch *schema.Schema, typeNames []string) Boa
 		for status, description := range typeDef.Statuses {
 			result.StatusDescriptions[typeName][status] = description
 		}
-		result.Boards[typeName] = make(map[string][]TaskSummary, len(typeDef.Pipeline))
+		result.BoardTasks[typeName] = make(map[string][]TaskSummary, len(typeDef.Pipeline))
 		for _, status := range typeDef.Pipeline {
-			result.Boards[typeName][status] = []TaskSummary{}
+			result.BoardTasks[typeName][status] = []TaskSummary{}
 		}
 		tasks := idx.Query(index.Query{Types: []string{typeName}, Archived: boolPtr(false)})
 		for _, t := range tasks {
-			if _, ok := result.Boards[typeName][t.Status]; !ok {
-				result.Boards[typeName][t.Status] = []TaskSummary{}
+			if _, ok := result.BoardTasks[typeName][t.Status]; !ok {
+				result.BoardTasks[typeName][t.Status] = []TaskSummary{}
 				result.StatusOrder[typeName] = append(result.StatusOrder[typeName], t.Status)
 			}
-			result.Boards[typeName][t.Status] = append(result.Boards[typeName][t.Status], summarizeTask(t))
+			result.BoardTasks[typeName][t.Status] = append(result.BoardTasks[typeName][t.Status], summarizeTask(t))
+		}
+		for _, status := range result.StatusOrder[typeName] {
+			result.Boards[typeName] = append(result.Boards[typeName], BoardColumn{
+				Status:      status,
+				Description: result.StatusDescriptions[typeName][status],
+				Tasks:       result.BoardTasks[typeName][status],
+			})
 		}
 	}
 	return result

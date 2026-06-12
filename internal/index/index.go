@@ -401,6 +401,15 @@ func (i *Index) Resolve(idOrPrefix string) (*task.Task, error) {
 	if t, ok := i.tasks[idOrPrefix]; ok {
 		return t, nil
 	}
+	if dash := strings.LastIndex(idOrPrefix, "-"); dash >= 0 && dash+1 < len(idOrPrefix) {
+		stripped := idOrPrefix[dash+1:]
+		if t, ok := i.tasks[stripped]; ok {
+			return t, nil
+		}
+		if matches := i.prefixMatches(stripped); len(matches) == 1 {
+			return i.tasks[matches[0]], nil
+		}
+	}
 	matches := i.prefixMatches(idOrPrefix)
 	switch len(matches) {
 	case 0:

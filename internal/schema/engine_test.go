@@ -58,6 +58,24 @@ func TestEvaluateGuardTruthTables(t *testing.T) {
 			guard: relationStatusGuard("relates", []string{"terminal"}),
 		},
 		{
+			name: "relation_status archived target matches actual literal status",
+			task: engineTask{id: "a", typ: "task", status: "todo", relations: map[string][]string{
+				"relates": {"b"},
+			}},
+			tasks: map[string]engineTask{"b": {id: "b", typ: "task", status: "scrapped", archived: true}},
+			guard: relationStatusGuard("relates", []string{"scrapped"}),
+		},
+		{
+			name: "relation_status archived target does not match other terminal literal",
+			task: engineTask{id: "a", typ: "task", status: "todo", relations: map[string][]string{
+				"relates": {"b"},
+			}},
+			tasks:    map[string]engineTask{"b": {id: "b", typ: "task", status: "scrapped", archived: true}},
+			guard:    relationStatusGuard("relates", []string{"done"}),
+			wantFail: true,
+			wantKind: string(GuardRelationStatus),
+		},
+		{
 			name: "relation_exists pass",
 			task: engineTask{id: "a", typ: "task", status: "todo", relations: map[string][]string{
 				"relates": {"b"},
@@ -129,6 +147,14 @@ func TestEvaluateGuardTruthTables(t *testing.T) {
 			guard: childrenStatusGuard([]string{"terminal"}),
 		},
 		{
+			name:     "children_status archived target does not match other terminal literal",
+			task:     engineTask{id: "a", typ: "task", status: "todo", children: []string{"b"}},
+			tasks:    map[string]engineTask{"b": {id: "b", typ: "task", status: "scrapped", archived: true}},
+			guard:    childrenStatusGuard([]string{"done"}),
+			wantFail: true,
+			wantKind: string(GuardChildrenStatus),
+		},
+		{
 			name:  "parent_status pass",
 			task:  engineTask{id: "a", typ: "task", status: "todo", parent: "p", hasParent: true},
 			tasks: map[string]engineTask{"p": {id: "p", typ: "task", status: "done"}},
@@ -160,6 +186,14 @@ func TestEvaluateGuardTruthTables(t *testing.T) {
 			task:  engineTask{id: "a", typ: "task", status: "todo", parent: "p", hasParent: true},
 			tasks: map[string]engineTask{"p": {id: "p", typ: "task", status: "todo", archived: true}},
 			guard: parentStatusGuard([]string{"terminal"}),
+		},
+		{
+			name:     "parent_status archived target does not match other terminal literal",
+			task:     engineTask{id: "a", typ: "task", status: "todo", parent: "p", hasParent: true},
+			tasks:    map[string]engineTask{"p": {id: "p", typ: "task", status: "scrapped", archived: true}},
+			guard:    parentStatusGuard([]string{"done"}),
+			wantFail: true,
+			wantKind: string(GuardParentStatus),
 		},
 		{
 			name:  "section_nonempty pass",

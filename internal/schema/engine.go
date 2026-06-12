@@ -243,14 +243,6 @@ func taskMatchesStatuses(schema *Schema, task TaskView, statuses []string) bool 
 	if statusSet["terminal"] && (task.Archived() || stringSetContains(typeDef.Terminal, task.Status())) {
 		return true
 	}
-	for _, terminal := range typeDef.Terminal {
-		if statusSet[terminal] && task.Archived() {
-			return true
-		}
-	}
-	if task.Archived() {
-		return false
-	}
 	return statusSet[task.Status()]
 }
 

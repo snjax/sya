@@ -48,6 +48,7 @@ type App struct {
 	appendEvent func(string, events.Event) error
 	result      any
 	colorize    Colorizer
+	warnedIndex bool
 }
 
 func New(options Options) *App {
@@ -122,6 +123,9 @@ func (a *App) Execute(args []string) int {
 			}
 			return partial.code
 		}
+		if wantsJSON(args) && isCobraUsageError(err) {
+			return a.EmitError(syaerr.Usage{Message: err.Error()})
+		}
 		return a.EmitError(err)
 	}
 	if a.result == silent {
@@ -134,6 +138,26 @@ func (a *App) Execute(args []string) int {
 		return result.ResultExitCode()
 	}
 	return syaerr.ExitOK
+}
+
+func wantsJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--json" {
+			return true
+		}
+	}
+	return false
+}
+
+func isCobraUsageError(err error) bool {
+	if _, ok := syaerr.AsCoded(err); ok {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "unknown flag") ||
+		strings.Contains(text, "unknown command") ||
+		strings.Contains(text, "accepts ") ||
+		strings.Contains(text, "requires ")
 }
 
 func (a *App) versionCommand(version string) *cobra.Command {

@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"<id>","file":".sya/tasks/<id>-json-task.md"}}
+stderr:

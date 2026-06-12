@@ -50,7 +50,7 @@ func (a *App) runReopen(id, to string) (MutationResult, error) {
 	if err := appendTransitionLog(t, a.now(), a.Actor(), from, to, string(schema.TransitionSetback), "reopened"); err != nil {
 		return MutationResult{}, err
 	}
-	if err := writeTask(state.Project.Root, t); err != nil {
+	if err := writeTask(state, t); err != nil {
 		return MutationResult{}, err
 	}
 	return a.transitionOK(state, t, from, to, true), nil

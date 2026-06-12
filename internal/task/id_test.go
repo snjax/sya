@@ -30,6 +30,26 @@ func TestNewID(t *testing.T) {
 	}
 }
 
+func TestClampIDLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		length int
+		want   int
+	}{
+		{length: 0, want: DefaultIDLength},
+		{length: 2, want: MinIDLength},
+		{length: 4, want: 4},
+		{length: 12, want: 12},
+		{length: 20, want: MaxIDLength},
+	}
+	for _, tt := range tests {
+		if got := ClampIDLength(tt.length); got != tt.want {
+			t.Fatalf("ClampIDLength(%d) = %d, want %d", tt.length, got, tt.want)
+		}
+	}
+}
+
 func TestValidNewIDPrefixPropertyExhaustive(t *testing.T) {
 	t.Parallel()
 

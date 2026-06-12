@@ -2,6 +2,10 @@ version: 2
 
 project_name: sya
 
+before:
+  hooks:
+    - sh scripts/bump-plugin-version.sh {{ .Version }}
+
 builds:
   - id: sya
     main: ./cmd/sya

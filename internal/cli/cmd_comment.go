@@ -48,7 +48,7 @@ func (a *App) runComment(id, message string) (CommentResult, error) {
 	if err := appendTaskLog(t, a.now(), a.Actor(), message); err != nil {
 		return CommentResult{}, err
 	}
-	if err := writeTask(state.Project.Root, t); err != nil {
+	if err := writeTask(state, t); err != nil {
 		return CommentResult{}, err
 	}
 	return CommentResult{ID: t.ID, File: t.File, Message: message}, nil

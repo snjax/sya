@@ -36,6 +36,9 @@ validate-plugin:
     claude plugin validate .
     claude plugin validate claude-plugin
 
+bump-plugin-version version:
+    sh scripts/bump-plugin-version.sh {{ version }}
+
 fmt:
     gofmt -w .
 

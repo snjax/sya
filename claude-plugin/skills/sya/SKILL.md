@@ -31,6 +31,16 @@ Use the prime output to learn:
 - memory notes relevant to tasks
 - whether the repo already has active `.sya/` state
 
+## Branch And Worktree Per Task
+
+When the repository workflow allows it, use one branch or worktree per durable task:
+
+```bash
+git switch -c sya/<id>
+```
+
+Move the task through statuses on that branch as work progresses. Because `.sya/` is git-native, merging the branch merges the board movement, task log, and code change together.
+
 ## Find And Claim Work
 
 Find ready tasks:

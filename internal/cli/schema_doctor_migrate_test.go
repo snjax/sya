@@ -176,6 +176,58 @@ func TestDoctorFindsAndFixesMissingSearchIgnoreFiles(t *testing.T) {
 	}
 }
 
+func TestDoctorFixMergeReportsSkippedConflict(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	data, err := os.ReadFile(filepath.Join("..", "doctor", "testdata", "fixmerge", "frontmatter-conflict.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".sya", "tasks", "fm001-frontmatter-conflict.md")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"doctor", "--fix-merge"})
+	if code != syaerr.ExitSchemaInvalid {
+		t.Fatalf("doctor --fix-merge code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "conflict_markers") || strings.Contains(stdout, "conflict markers found [fixable]") {
+		t.Fatalf("conflict finding should not be marked fixable:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "fix_merge_skipped") || !strings.Contains(stdout, "conflict markers found") {
+		t.Fatalf("doctor --fix-merge missing skipped change:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "warning: 1 quarantined task file(s), run sya doctor") {
+		t.Fatalf("missing quarantine warning stderr=%q", stderr)
+	}
+}
+
+func TestLoadProjectWarnsAboutQuarantinedTasks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	if err := os.WriteFile(filepath.Join(root, ".sya", "tasks", "bad.md"), []byte("<<<<<<< ours\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"list"})
+	if code != syaerr.ExitOK || !strings.Contains(stderr, "warning: 1 quarantined task file(s), run sya doctor") {
+		t.Fatalf("list code=%d stderr=%q", code, stderr)
+	}
+	_, stderr, code = runCLI(t, root, nil, nil, []string{"--json", "list"})
+	if code != syaerr.ExitOK || !strings.Contains(stderr, "warning: 1 quarantined task file(s), run sya doctor") {
+		t.Fatalf("json list code=%d stderr=%q", code, stderr)
+	}
+	_, stderr, code = runCLI(t, root, nil, nil, []string{"--quiet", "list"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("quiet list code=%d stderr=%q", code, stderr)
+	}
+}
+
 func TestDoctorFindsAndFixesLegacySearchIgnoreFiles(t *testing.T) {
 	t.Parallel()
 

@@ -85,11 +85,10 @@ func (a *App) runRestore(ctx context.Context, opts restoreOptions, runner gitx.R
 	}
 
 	current.Body = historical.Body
-	current.Archived = true
 	if err := appendTaskLog(current, a.now(), a.Actor(), "restored from "+rev); err != nil {
 		return RestoreResult{}, err
 	}
-	if err := writeTask(state.Project.Root, current); err != nil {
+	if err := writeTask(state, current); err != nil {
 		return RestoreResult{}, err
 	}
 	return RestoreResult{ID: current.ID, File: current.File, Rev: rev, Applied: true}, nil

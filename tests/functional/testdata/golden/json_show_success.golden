@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"task":{"id":"<id>","type":"feature","title":"Build API","status":"draft","status_description":"Идея зафиксирована, требования не созрели","priority":"high","parent":"<id>","created":"<time>","schema_version":1,"file":".sya/tasks/<id>-build-api.md"},"relations":{"depends_on":["<id>"]},"sections":[{"name":"Description","text":"Feature description"},{"name":"Design","text":""},{"name":"Acceptance","text":""},{"name":"Log","text":"- <time> @functional: created"}]}}
+stderr:

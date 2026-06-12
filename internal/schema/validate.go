@@ -167,18 +167,29 @@ func (r *ValidationResult) validateReachability(typeName string, typeDef TypeDef
 
 func (r *ValidationResult) validateOutgoing(typeName string, typeDef TypeDef, transitions []Transition, pipeline map[string]bool) {
 	terminal := makeStringSet(typeDef.Terminal)
+	parked := makeStringSet(typeDef.Parked)
 	outgoing := make(map[string]bool)
+	explicitOutgoing := make(map[string]bool)
 	for _, transition := range transitions {
 		if pipeline[transition.From] && pipeline[transition.To] {
 			outgoing[transition.From] = true
 		}
 	}
+	for _, transition := range typeDef.Transitions {
+		if transition.From != "*" && pipeline[transition.From] && pipeline[transition.To] {
+			explicitOutgoing[transition.From] = true
+		}
+	}
 	for _, status := range typeDef.Pipeline {
-		if terminal[status] {
+		if terminal[status] || parked[status] {
 			continue
 		}
 		if !outgoing[status] {
-			r.addViolation("nonterminal_dead_end", "types."+typeName+".transitions", fmt.Sprintf("non-terminal status %q has no outgoing transition for type %q", status, typeName))
+			r.addWarning("status_dead_end", "types."+typeName+".transitions", fmt.Sprintf("active status %q has no outgoing transition for type %q", status, typeName))
+			continue
+		}
+		if !explicitOutgoing[status] {
+			r.addWarning("status_dead_end", "types."+typeName+".transitions", fmt.Sprintf("active status %q has only wildcard-derived outgoing transitions for type %q", status, typeName))
 		}
 	}
 }
@@ -264,6 +275,10 @@ func (r *ValidationResult) warnUnknownInStatuses(path string, guard Guard, possi
 
 func (r *ValidationResult) addViolation(kind, path, message string) {
 	r.Violations = append(r.Violations, Diagnostic{Kind: kind, Path: path, Message: message})
+}
+
+func (r *ValidationResult) addWarning(kind, path, message string) {
+	r.Warnings = append(r.Warnings, Diagnostic{Kind: kind, Path: path, Message: message})
 }
 
 func ExpandTransitions(typeDef TypeDef) ([]Transition, error) {

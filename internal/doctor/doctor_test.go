@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/snjax/sya/internal/fsutil"
 	"github.com/snjax/sya/internal/index"
@@ -56,6 +57,114 @@ func TestRunDirtyFixture(t *testing.T) {
 	}
 	if got := findingByKind(report, "symmetric_duplicate_edge"); got == nil || !got.Fixable {
 		t.Fatalf("symmetric duplicate finding = %#v, want fixable", got)
+	}
+}
+
+func TestRunStrictReportsMissingSections(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeSchema(t, dir)
+	writeTaskFile(t, dir, "tasks/t00001-task.md", &task.Task{
+		ID:            "t00001",
+		Type:          "task",
+		Title:         "Task",
+		Status:        "todo",
+		SchemaVersion: 1,
+		Body:          body("Log", "- created\n"),
+	})
+
+	sch, idx := loadProject(t, os.DirFS(dir), ".")
+	report, err := Run(os.DirFS(dir), ".", sch, idx, Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findingByKind(report, "section_missing"); got == nil || got.Severity != SeverityWarning {
+		t.Fatalf("section_missing finding = %#v in %#v", got, report.Findings)
+	}
+
+	nonStrict, err := Run(os.DirFS(dir), ".", sch, idx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasKind(nonStrict, "section_missing") {
+		t.Fatalf("non-strict report contains section_missing: %#v", nonStrict.Findings)
+	}
+}
+
+func TestRunReportsActiveDeadEnd(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		"schema.yml": {Data: []byte(`
+schema_version: 1
+defaults: {type: task}
+types:
+  task:
+    pipeline: [todo, stuck, parked, done]
+    terminal: [done]
+    parked: [parked]
+    sections: [Description]
+    transitions:
+      todo -> stuck: {}
+`)},
+		"tasks/a00001-stuck.md": {Data: []byte(`---
+id: a00001
+type: task
+title: Stuck
+status: stuck
+schema_version: 1
+---
+## Description
+stuck
+`)},
+		"tasks/p00001-parked.md": {Data: []byte(`---
+id: p00001
+type: task
+title: Parked
+status: parked
+schema_version: 1
+---
+## Description
+parked
+`)},
+	}
+	sch, idx := loadProject(t, fsys, ".")
+	report, err := Run(fsys, ".", sch, idx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findingByKind(report, "status_dead_end"); got == nil || got.TaskID != "a00001" || got.Severity != SeverityWarning {
+		t.Fatalf("status_dead_end finding = %#v in %#v", got, report.Findings)
+	}
+	for _, finding := range report.Findings {
+		if finding.Kind == "status_dead_end" && finding.TaskID == "p00001" {
+			t.Fatalf("parked task reported as dead end: %#v", report.Findings)
+		}
+	}
+}
+
+func TestRunReportsMissingMemoryTaskRefs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeSchema(t, dir)
+	writeTaskFile(t, dir, "tasks/a00001-task.md", &task.Task{ID: "a00001", Type: "task", Title: "Task", Status: "todo", SchemaVersion: 1, Body: body("Description", "task\n")})
+	memoryPath := filepath.Join(dir, "memory", "note.md")
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(memoryPath, []byte("---\nname: note\ntasks: [a00001, missing1]\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sch, idx := loadProject(t, os.DirFS(dir), ".")
+	report, err := Run(os.DirFS(dir), ".", sch, idx, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findingByKind(report, "memory_task_missing"); got == nil || got.TaskID != "missing1" || got.Severity != SeverityWarning {
+		t.Fatalf("memory_task_missing finding = %#v in %#v", got, report.Findings)
 	}
 }
 
@@ -134,6 +243,49 @@ func TestReassignIDUpdatesInboundReferences(t *testing.T) {
 	parentTask, _ := reloadedIndex.Get("ref004")
 	if parentTask.Parent != newID {
 		t.Fatalf("parent = %q, want %q", parentTask.Parent, newID)
+	}
+}
+
+func TestReassignIDChoosesLaterCreatedDuplicate(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeSchema(t, dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".sya"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".sya", "config.yml"), []byte("id_length: 8\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	early := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	late := early.Add(time.Hour)
+	writeTaskFile(t, dir, "tasks/dup001-one.md", &task.Task{ID: "dup001", Type: "task", Title: "One", Status: "todo", Created: early, SchemaVersion: 1, Body: body("Description", "one\n")})
+	writeTaskFile(t, dir, "tasks/dup001-two.md", &task.Task{ID: "dup001", Type: "task", Title: "Two", Status: "todo", Created: late, SchemaVersion: 1, Body: body("Description", "two\n")})
+	writeTaskFile(t, dir, "tasks/ref001-ref.md", &task.Task{ID: "ref001", Type: "task", Title: "Ref", Status: "todo", Relations: map[string][]string{"depends_on": {"dup001"}}, SchemaVersion: 1, Body: body("Description", "ref\n")})
+
+	_, idx := loadProject(t, os.DirFS(dir), ".")
+	changes, err := ReassignIDInDir(dir, idx, "dup001")
+	if err != nil {
+		t.Fatalf("ReassignIDInDir() error = %v", err)
+	}
+	var reassigned Change
+	for _, change := range changes {
+		if change.Action == "reassign_id" {
+			reassigned = change
+			break
+		}
+	}
+	if reassigned.Path != "tasks/dup001-two.md" {
+		t.Fatalf("reassigned path = %q, want later-created duplicate", reassigned.Path)
+	}
+	if len(reassigned.To) != 8 {
+		t.Fatalf("reassigned id length = %d, want 8 (%q)", len(reassigned.To), reassigned.To)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks", "dup001-one.md")); err != nil {
+		t.Fatalf("kept early duplicate missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks", "dup001-two.md")); !os.IsNotExist(err) {
+		t.Fatalf("late duplicate old path still exists or stat failed: %v", err)
 	}
 }
 

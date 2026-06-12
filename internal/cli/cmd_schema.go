@@ -10,6 +10,7 @@ import (
 
 	"github.com/snjax/sya/internal/schema"
 	"github.com/snjax/sya/internal/syaerr"
+	"github.com/snjax/sya/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -253,6 +254,7 @@ func (a *App) runSchemaMigrate(opts schemaMigrateOptions) (SchemaMigrateResult, 
 		}
 	}
 	var changes []SchemaMigrateChange
+	var affected []*task.Task
 	for _, t := range state.Index.All() {
 		if opts.Type != "" && t.Type != opts.Type {
 			continue
@@ -275,15 +277,18 @@ func (a *App) runSchemaMigrate(opts schemaMigrateOptions) (SchemaMigrateResult, 
 			To:     newStatus,
 			Status: newStatus,
 		})
-		if opts.DryRun {
-			continue
-		}
+		affected = append(affected, t)
+	}
+	if opts.DryRun {
+		return SchemaMigrateResult{Changes: changes, DryRun: opts.DryRun}, nil
+	}
+	for _, t := range affected {
 		t.Status = newStatus
 		t.SchemaVersion = state.Schema.SchemaVersion
 		if err := appendTaskLog(t, a.now(), a.Actor(), fmt.Sprintf("migrated: status %s->%s", oldStatus, newStatus)); err != nil {
 			return SchemaMigrateResult{}, err
 		}
-		if err := writeTask(state.Project.Root, t); err != nil {
+		if err := writeTaskRaw(state.Project.Root, t); err != nil {
 			return SchemaMigrateResult{}, err
 		}
 	}

@@ -110,6 +110,18 @@ func TestFunctionalGoldens(t *testing.T) {
 			mustOK(t, runSya(t, root, nil, "init"))
 			return runSya(t, root, nil, "--json", "doctor")
 		}},
+		{"json_create_success", func(t *testing.T, root string) runResult {
+			mustOK(t, runSya(t, root, nil, "init"))
+			return runSya(t, root, nil, "--json", "create", "JSON Task")
+		}},
+		{"json_show_success", func(t *testing.T, root string) runResult {
+			id := fixtureProject(t, root)
+			return runSya(t, root, nil, "--json", "show", id)
+		}},
+		{"json_transitions_success", func(t *testing.T, root string) runResult {
+			id := fixtureProject(t, root)
+			return runSya(t, root, nil, "--json", "transitions", id)
+		}},
 		{"json_not_found", func(t *testing.T, root string) runResult {
 			mustOK(t, runSya(t, root, nil, "init"))
 			return runSya(t, root, nil, "--json", "show", "abc123")
@@ -158,8 +170,6 @@ func TestFunctionalGoldens(t *testing.T) {
 		})
 	}
 
-	// TODO(sya-tym): add transition_not_allowed JSON envelope golden.
-	// TODO(sya-tym): add transition_blocked JSON envelope golden.
 }
 
 func runSya(t *testing.T, dir string, stdin io.Reader, args ...string) runResult {

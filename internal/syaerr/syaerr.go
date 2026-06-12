@@ -161,6 +161,15 @@ func (e CloseAmbiguous) Error() string {
 func (e CloseAmbiguous) Type() string  { return "close_ambiguous" }
 func (e CloseAmbiguous) ExitCode() int { return ExitTransitionRejected }
 
+type WispLinkForbidden struct {
+	ID   string `json:"id"`
+	Hint string `json:"hint"`
+}
+
+func (e WispLinkForbidden) Error() string { return "wisps cannot be linked as task relations" }
+func (e WispLinkForbidden) Type() string  { return "wisp_link_forbidden" }
+func (e WispLinkForbidden) ExitCode() int { return ExitLookup }
+
 type SchemaInvalid struct {
 	Message    string      `json:"message"`
 	Violations []Violation `json:"violations,omitempty"`
@@ -169,6 +178,21 @@ type SchemaInvalid struct {
 func (e SchemaInvalid) Error() string { return e.Message }
 func (e SchemaInvalid) Type() string  { return "schema_invalid" }
 func (e SchemaInvalid) ExitCode() int { return ExitSchemaInvalid }
+
+type SchemaConformance struct {
+	Task       string      `json:"task,omitempty"`
+	Path       string      `json:"path,omitempty"`
+	Violations []Violation `json:"violations,omitempty"`
+}
+
+func (e SchemaConformance) Error() string {
+	if len(e.Violations) == 0 {
+		return "task does not conform to current schema; run sya doctor or sya schema migrate"
+	}
+	return e.Violations[0].Message + "; run sya doctor or sya schema migrate"
+}
+func (e SchemaConformance) Type() string  { return "schema_conformance" }
+func (e SchemaConformance) ExitCode() int { return ExitSchemaInvalid }
 
 type ErrConflictMarkers struct {
 	Path string `json:"path,omitempty"`
@@ -258,7 +282,9 @@ func Payload(err error) ErrorPayload {
 	var alreadyClaimed AlreadyClaimed
 	var claimNotReachable ClaimNotReachable
 	var closeAmbiguous CloseAmbiguous
+	var wispLinkForbidden WispLinkForbidden
 	var schemaInvalid SchemaInvalid
+	var schemaConformance SchemaConformance
 	var conflictMarkers ErrConflictMarkers
 	var gitRequired GitRequired
 	var projectLocked ProjectLocked
@@ -295,8 +321,15 @@ func Payload(err error) ErrorPayload {
 		payload.From = closeAmbiguous.From
 		payload.Reachable = closeAmbiguous.Reachable
 		payload.Hints = closeAmbiguous.Hints
+	case errors.As(err, &wispLinkForbidden):
+		payload.ID = wispLinkForbidden.ID
+		payload.Hint = wispLinkForbidden.Hint
 	case errors.As(err, &schemaInvalid):
 		payload.Violations = schemaInvalid.Violations
+	case errors.As(err, &schemaConformance):
+		payload.Task = schemaConformance.Task
+		payload.Path = schemaConformance.Path
+		payload.Violations = schemaConformance.Violations
 	case errors.As(err, &conflictMarkers):
 		payload.Path = conflictMarkers.Path
 	case errors.As(err, &gitRequired):
@@ -341,7 +374,11 @@ func ErrorMessage(err error) string {
 		return e.Error()
 	case CloseAmbiguous:
 		return e.Error()
+	case WispLinkForbidden:
+		return e.Error()
 	case SchemaInvalid:
+		return e.Error()
+	case SchemaConformance:
 		return e.Error()
 	case Usage:
 		return e.Error()
@@ -370,6 +407,7 @@ type ErrorPayload struct {
 	NextAdvance  *TransitionOption  `json:"next_advance,omitempty"`
 	Reachable    []TransitionOption `json:"reachable,omitempty"`
 	Hints        []string           `json:"hints,omitempty"`
+	Hint         string             `json:"hint,omitempty"`
 }
 
 func formatTransitionOptions(options []TransitionOption) string {

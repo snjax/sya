@@ -10,11 +10,11 @@ import (
 )
 
 const DefaultIDLength = 6
+const MinIDLength = 4
+const MaxIDLength = 12
 
 func NewID(existing map[string]struct{}, length int) (string, error) {
-	if length <= 0 {
-		length = DefaultIDLength
-	}
+	length = ClampIDLength(length)
 	buf := make([]byte, (length+1)/2)
 	for {
 		if _, err := rand.Read(buf); err != nil {
@@ -25,6 +25,19 @@ func NewID(existing map[string]struct{}, length int) (string, error) {
 			return id, nil
 		}
 	}
+}
+
+func ClampIDLength(length int) int {
+	if length <= 0 {
+		return DefaultIDLength
+	}
+	if length < MinIDLength {
+		return MinIDLength
+	}
+	if length > MaxIDLength {
+		return MaxIDLength
+	}
+	return length
 }
 
 func ResolvePrefix(ids []string, prefix string) (string, []string, error) {

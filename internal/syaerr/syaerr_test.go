@@ -80,6 +80,10 @@ func TestErrorEnvelopeGoldens(t *testing.T) {
 			},
 			Hints: []string{"sya close a3f8c1 --to scrapped"},
 		},
+		"wisp_link_forbidden": WispLinkForbidden{
+			ID:   "w-a3f8c1",
+			Hint: "sya wisp squash w-a3f8c1 --type T first",
+		},
 		"schema_invalid": SchemaInvalid{
 			Message: "schema validation failed",
 			Violations: []Violation{

@@ -102,11 +102,24 @@ func (a *App) runDoctor(opts doctorOptions) (DoctorResult, error) {
 			return DoctorResult{}, err
 		}
 		for _, finding := range report.Findings {
-			if finding.Kind != "conflict_markers" || !finding.Fixable || finding.Path == "" {
+			if finding.Kind != "conflict_markers" || finding.Path == "" {
+				continue
+			}
+			if !finding.Fixable {
+				changes = append(changes, doctor.Change{
+					Path:    finding.Path,
+					Action:  "fix_merge_skipped",
+					Message: finding.Message,
+				})
 				continue
 			}
 			fixed, err := doctor.FixMergeWith(writer, filepath.Join(state.Project.Root, filepath.FromSlash(finding.Path)))
 			if err != nil {
+				changes = append(changes, doctor.Change{
+					Path:    finding.Path,
+					Action:  "fix_merge_skipped",
+					Message: err.Error(),
+				})
 				continue
 			}
 			changes = append(changes, fixed...)

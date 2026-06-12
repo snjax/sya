@@ -60,7 +60,7 @@ type cachedSection struct {
 }
 
 func cacheEnabled(fsys fs.FS, dir string, opts LoadOptions) (cacheContext, bool) {
-	if opts.DisableCache || os.Getenv("SYA_NO_CACHE") == "1" {
+	if opts.DisableCache || os.Getenv("SYA_NO_CACHE") != "" {
 		return cacheContext{}, false
 	}
 	root := opts.ProjectRoot

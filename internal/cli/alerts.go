@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/snjax/sya/internal/doctor"
@@ -55,22 +56,35 @@ func (a *App) startAlert(command string, payload any) {
 		os.Remove(name)
 		return
 	}
-	if _, err := tmp.Seek(0, 0); err != nil {
-		tmp.Close()
+	if err := tmp.Close(); err != nil {
 		os.Remove(name)
 		return
 	}
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Stdin = tmp
+	script := command + " < " + shellQuoteAlert(name) + "; rm -f " + shellQuoteAlert(name)
+	cmd := exec.Command("sh", "-c", script)
+	waitForExit := false
+	if _, err := exec.LookPath("timeout"); err == nil {
+		cmd = exec.Command("timeout", "5", "sh", "-c", script)
+		waitForExit = true
+	}
 	if err := cmd.Start(); err != nil {
-		tmp.Close()
 		os.Remove(name)
 		return
 	}
-	_ = cmd.Process.Release()
-	tmp.Close()
+	if !waitForExit {
+		_ = cmd.Process.Release()
+		go func() {
+			time.Sleep(1 * time.Second)
+			_ = os.Remove(name)
+		}()
+		return
+	}
 	go func() {
-		time.Sleep(5 * time.Second)
+		_ = cmd.Wait()
 		_ = os.Remove(name)
 	}()
+}
+
+func shellQuoteAlert(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

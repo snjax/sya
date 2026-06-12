@@ -9,7 +9,7 @@ error    parent_not_container       <id>   .sya/tasks/<id>-broken.md        pare
 error    relation_unknown           <id>   .sya/tasks/<id>-broken.md        relation "missingrel" is not declared in schema
 error    section_unknown            <id>   .sya/tasks/<id>-broken.md        section "Surprise" is not declared for type "task"
 error    task_status_unknown        <id>   .sya/tasks/<id>-broken.md        status "ghost" is not in pipeline for type "task"
-error    conflict_markers                    .sya/tasks/<id>-conflict.md      conflict markers found [fixable]
+error    conflict_markers                    .sya/tasks/<id>-conflict.md      conflict markers found
 error    relation_cycle             cyc002   .sya/tasks/cyc002-cycle.md         graph:dag relation "depends_on" has cycle: cyc002 -> cyc003 -> cyc002
 error    duplicate_id                        .sya/tasks/dup001-a.md             duplicate task id "dup001" [fixable]
 error    schema_version_future      fut001   .sya/tasks/fut001-future.md        task schema_version 99 is newer than schema version 2
@@ -17,3 +17,4 @@ error    parent_cycle               par001   .sya/tasks/par001-parent-cycle.md  
 warning  symmetric_duplicate_edge            .sya/tasks/<id>-broken.md        duplicate canonical edge <id> relates rel002 [fixable]
 info     schema_version_drift       <id>   .sya/tasks/<id>-broken.md        task schema_version 1 is older than schema version 2 [fixable]
 stderr:
+warning: 1 quarantined task file(s), run sya doctor

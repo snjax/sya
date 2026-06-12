@@ -7,3 +7,4 @@ info     schema_version_drift       log001   .sya/tasks/log001-log-conflict.md  
 changes:
   fix_merge $ROOT/.sya/tasks/log001-log-conflict.md (merged Log conflict)
 stderr:
+warning: 1 quarantined task file(s), run sya doctor

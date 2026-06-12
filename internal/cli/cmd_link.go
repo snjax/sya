@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/snjax/sya/internal/syaerr"
 	"github.com/spf13/cobra"
@@ -46,6 +47,12 @@ func (a *App) runLink(left, relation, right string, add bool) (LinkResult, error
 	if err != nil {
 		return LinkResult{}, err
 	}
+	if err := a.rejectExistingWispRelationEndpoint(state.Project, left); err != nil {
+		return LinkResult{}, err
+	}
+	if err := a.rejectExistingWispRelationEndpoint(state.Project, right); err != nil {
+		return LinkResult{}, err
+	}
 	leftTask, err := state.Index.Resolve(left)
 	if err != nil {
 		return LinkResult{}, err
@@ -77,12 +84,15 @@ func (a *App) runLink(left, relation, right string, add bool) (LinkResult, error
 			source.Relations[canonical] = append(source.Relations[canonical], to)
 		}
 	} else {
+		if !stringIn(source.Relations[canonical], to) {
+			return LinkResult{From: from, Relation: canonical, To: to, File: source.File, Action: "noop", OK: true}, nil
+		}
 		source.Relations[canonical] = removeString(source.Relations[canonical], to)
 		if len(source.Relations[canonical]) == 0 {
 			delete(source.Relations, canonical)
 		}
 	}
-	if err := writeTask(state.Project.Root, source); err != nil {
+	if err := writeTask(state, source); err != nil {
 		return LinkResult{}, err
 	}
 	action := "linked"
@@ -90,4 +100,18 @@ func (a *App) runLink(left, relation, right string, add bool) (LinkResult, error
 		action = "unlinked"
 	}
 	return LinkResult{From: from, Relation: canonical, To: to, File: source.File, Action: action, OK: true}, nil
+}
+
+func (a *App) rejectExistingWispRelationEndpoint(project Project, id string) error {
+	if !strings.HasPrefix(id, "w-") {
+		return nil
+	}
+	w, err := resolveWisp(project, id)
+	if err != nil {
+		return nil
+	}
+	return syaerr.WispLinkForbidden{
+		ID:   w.ID,
+		Hint: "sya wisp squash " + w.ID + " --type T first",
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/snjax/sya/internal/syaerr"
+	"github.com/snjax/sya/internal/task"
 )
 
 func TestMutationCommandGoldens(t *testing.T) {
@@ -183,6 +184,319 @@ func TestMutationCommandGoldens(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateRejectsParentCycle(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	addRecursiveNodeType(t, root)
+	createSeedTask(t, root, "a00001", "A", "-t", "node")
+	createSeedTask(t, root, "b00001", "B", "-t", "node", "--parent", "a00001")
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"update", "a00001", "--parent", "b00001"})
+	if code != syaerr.ExitUsage || !strings.Contains(stderr, "parent cycle") {
+		t.Fatalf("stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestFreshFeatureBlocksImplOnEmptyDesign(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+	mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"move", "f00001", "impl"})
+	if code != syaerr.ExitTransitionRejected || !strings.Contains(stderr, "Секция Design пуста") || !strings.Contains(stderr, ".sya/tasks/f00001-feature.md") {
+		t.Fatalf("stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestClaimWorkingStatusOnlyAssigns(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Working Task")
+	mustRun(t, root, nil, []string{"move", "a00001", "in_progress"})
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--actor", "codex", "claim", "a00001"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "a00001: ok") {
+		t.Fatalf("claim stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	parsed, err := parseTaskFile(t, findTaskFile(t, root, "a00001"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Status != "in_progress" || parsed.Assignee != "codex" || !strings.Contains(string(parsed.Body.Raw), "@codex: claimed") {
+		t.Fatalf("claim changed wrong fields: status=%s assignee=%s\n%s", parsed.Status, parsed.Assignee, parsed.Body.Raw)
+	}
+}
+
+func TestClaimWorkingStatusStealsAssignee(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Working Task")
+	mustRun(t, root, nil, []string{"move", "a00001", "in_progress"})
+	mustRun(t, root, nil, []string{"update", "a00001", "--assignee", "alice"})
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"--actor", "codex", "claim", "a00001"})
+	if code != syaerr.ExitTransitionRejected || !strings.Contains(stderr, "already claimed by alice") {
+		t.Fatalf("claim occupied stderr=%q code=%d", stderr, code)
+	}
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--actor", "codex", "claim", "a00001", "--steal"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "a00001: ok") {
+		t.Fatalf("steal stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	parsed, err := parseTaskFile(t, findTaskFile(t, root, "a00001"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Assignee != "codex" || !strings.Contains(string(parsed.Body.Raw), "claim stolen from alice") {
+		t.Fatalf("steal did not update assignee/log: %#v\n%s", parsed.Assignee, parsed.Body.Raw)
+	}
+}
+
+func TestUnlinkMissingRelationIsNoop(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "A")
+	createSeedTask(t, root, "b00001", "B")
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"unlink", "a00001", "depends_on", "b00001"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "noop a00001 depends_on b00001") {
+		t.Fatalf("unlink stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
+func TestUpdateRejectsDuplicateFieldFlags(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "b00001", "Bug", "-t", "bug")
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"update", "b00001", "--field", "severity=critical", "--field", "severity=minor"})
+	if code != syaerr.ExitUsage || !strings.Contains(stderr, "duplicate field flag: severity") {
+		t.Fatalf("stderr=%q code=%d", stderr, code)
+	}
+}
+
+func TestUpdateRelIsRepeatable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "A")
+	createSeedTask(t, root, "b00001", "B")
+	createSeedTask(t, root, "c00001", "C")
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"update", "a00001", "--rel", "depends_on=b00001", "--rel", "depends_on=c00001"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("update stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "a00001"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, "depends_on: b00001, c00001") {
+		t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
+func TestUpdateFieldIsRepeatable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	addRecordType(t, root)
+	createSeedTask(t, root, "r00001", "Record", "-t", "record")
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"update", "r00001", "--field", "ready=true", "--field", "size=large"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("update stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"--json", "show", "r00001"})
+	if code != syaerr.ExitOK || stderr != "" || !strings.Contains(stdout, `"fields":{"ready":true,"size":"large"}`) {
+		t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
+func TestShowDeduplicatesSymmetricRelationView(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "A")
+	createSeedTask(t, root, "b00001", "B")
+	mustRun(t, root, nil, []string{"link", "a00001", "relates", "b00001"})
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"show", "a00001"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if got := strings.Count(stdout, "relates: b00001"); got != 1 {
+		t.Fatalf("relates rendered %d times, want 1\n%s", got, stdout)
+	}
+	if strings.Contains(stdout, "relates: b00001, b00001") {
+		t.Fatalf("duplicate relation rendered:\n%s", stdout)
+	}
+}
+
+func TestMutationWriteRejectsSchemaConformanceViolation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Bad Section")
+	path := findTaskFile(t, root, "a00001")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("\n## Surprise\nnot declared\n"); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"--json", "comment", "a00001", "-m", "hello"})
+	if code != syaerr.ExitSchemaInvalid || !strings.Contains(stdout, `"type":"schema_conformance"`) || !strings.Contains(stdout, `"section_unknown"`) {
+		t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+}
+
+func TestMutationWriteBumpsSchemaVersion(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	setFixtureSchemaVersion(t, root, 2)
+	createSeedTask(t, root, "a00001", "Old Version")
+	path := findTaskFile(t, root, "a00001")
+	replaceInFile(t, path, "schema_version: 2\n", "schema_version: 1\n")
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"comment", "a00001", "-m", "bump"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("stderr=%q code=%d", stderr, code)
+	}
+	parsed := parseTaskFileForTest(t, path)
+	if parsed.SchemaVersion != 2 {
+		t.Fatalf("schema_version = %d, want 2", parsed.SchemaVersion)
+	}
+}
+
+func TestSchemaMigratePreflightPreventsPartialWrites(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "Good")
+	bad := &task.Task{ID: "b00001", Type: "ghost", Title: "Bad", Status: "todo", SchemaVersion: 1, Body: task.NewBody([]byte("## Description\nbad\n"), nil)}
+	out, err := task.Serialize(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.Join(root, ".sya", "tasks", "b00001-bad.md")
+	if err := os.WriteFile(badPath, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runCLI(t, root, nil, nil, []string{"schema", "migrate", "--rename-status", "todo=in_progress"})
+	if code != syaerr.ExitSchemaInvalid || !strings.Contains(stderr, "unknown task type: ghost") {
+		t.Fatalf("stderr=%q code=%d", stderr, code)
+	}
+	parsed := parseTaskFileForTest(t, findTaskFile(t, root, "a00001"))
+	if parsed.Status != "todo" {
+		t.Fatalf("valid task was partially migrated to %q", parsed.Status)
+	}
+}
+
+func addRecordType(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".sya", "schema.yml")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open schema: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close schema: %v", err)
+		}
+	}()
+	if _, err := f.WriteString(`
+  record:
+    pipeline: [open, done]
+    terminal: [done]
+    sections: [Description]
+    fields:
+      ready: {type: bool}
+      size: {type: enum, values: [small, large]}
+    transitions:
+      open -> done: {}
+`); err != nil {
+		t.Fatalf("append schema type: %v", err)
+	}
+}
+
+func addRecursiveNodeType(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".sya", "schema.yml")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open schema: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("close schema: %v", err)
+		}
+	}()
+	if _, err := f.WriteString(`
+  node:
+    container: true
+    children: [node]
+    pipeline: [open, done]
+    terminal: [done]
+    sections: [Description]
+    transitions:
+      open -> done: {}
+`); err != nil {
+		t.Fatalf("append schema type: %v", err)
+	}
+}
+
+func replaceInFile(t *testing.T, path, old, new string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, old) {
+		t.Fatalf("%s does not contain %q", path, old)
+	}
+	text = strings.Replace(text, old, new, 1)
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func parseTaskFileForTest(t *testing.T, path string) *task.Task {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := task.ParseBytes(data)
+	if err != nil {
+		t.Fatalf("parse task: %v\n%s", err, data)
+	}
+	return parsed
 }
 
 func TestMutationErrorPaths(t *testing.T) {

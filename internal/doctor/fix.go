@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/snjax/sya/internal/fsutil"
@@ -39,6 +40,22 @@ func (OSWriter) Remove(name string) error {
 
 func FixMerge(path string) ([]Change, error) {
 	return FixMergeWith(OSWriter{}, path)
+}
+
+func CanFixMerge(data []byte) bool {
+	oursBytes, theirsBytes, err := splitConflictVersions(data)
+	if err != nil {
+		return false
+	}
+	ours, err := task.ParseBytes(oursBytes)
+	if err != nil {
+		return false
+	}
+	theirs, err := task.ParseBytes(theirsBytes)
+	if err != nil {
+		return false
+	}
+	return taskFrontmatterEqual(ours, theirs) && nonLogSectionsEqual(ours, theirs)
 }
 
 func FixMergeWith(writer Writer, path string) ([]Change, error) {
@@ -90,25 +107,24 @@ func ReassignIDInDirWith(writer Writer, projectDir string, idx *index.Index, old
 	if writer == nil {
 		writer = OSWriter{}
 	}
-	target, err := idx.Get(oldID)
+	target, targetPath, err := reassignVictim(projectDir, idx, oldID)
 	if err != nil {
 		return nil, err
 	}
 	existing := make(map[string]struct{})
 	for _, t := range idx.All() {
-		if t.ID != oldID {
-			existing[t.ID] = struct{}{}
-		}
+		existing[t.ID] = struct{}{}
 	}
-	newID, err := task.NewID(existing, task.DefaultIDLength)
+	newID, err := task.NewID(existing, reassignIDLength(projectDir))
 	if err != nil {
 		return nil, err
 	}
 
 	var changes []Change
-	oldPath := resolvePath(projectDir, target.File)
+	oldPath := resolvePath(projectDir, targetPath)
 	newPath := reassignedPath(oldPath, oldID, newID)
 	target.ID = newID
+	target.File = relativePath(projectDir, newPath)
 	if err := writeTask(writer, newPath, target); err != nil {
 		return nil, err
 	}
@@ -117,10 +133,10 @@ func ReassignIDInDirWith(writer Writer, projectDir string, idx *index.Index, old
 			return nil, err
 		}
 	}
-	changes = append(changes, Change{Path: target.File, Action: "reassign_id", From: oldID, To: newID})
+	changes = append(changes, Change{Path: relativePath(projectDir, oldPath), Action: "reassign_id", From: oldID, To: newID})
 
 	for _, t := range idx.All() {
-		if t == target {
+		if t.File == relativePath(projectDir, oldPath) {
 			continue
 		}
 		changed := false
@@ -146,6 +162,86 @@ func ReassignIDInDirWith(writer Writer, projectDir string, idx *index.Index, old
 		changes = append(changes, Change{Path: t.File, Action: "update_reference", From: oldID, To: newID})
 	}
 	return changes, nil
+}
+
+func reassignIDLength(projectDir string) int {
+	if projectDir == "" {
+		return task.DefaultIDLength
+	}
+	for _, path := range []string{
+		filepath.Join(projectDir, ".sya", "config.yml"),
+		filepath.Join(projectDir, "config.yml"),
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			key, value, ok := strings.Cut(line, ":")
+			if !ok || strings.TrimSpace(key) != "id_length" {
+				continue
+			}
+			length, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil {
+				return task.DefaultIDLength
+			}
+			return task.ClampIDLength(length)
+		}
+	}
+	return task.DefaultIDLength
+}
+
+func reassignVictim(projectDir string, idx *index.Index, oldID string) (*task.Task, string, error) {
+	paths := duplicatePaths(idx, oldID)
+	if len(paths) == 0 || projectDir == "" {
+		t, err := idx.Get(oldID)
+		if err != nil {
+			return nil, "", err
+		}
+		return t, t.File, nil
+	}
+	sort.Strings(paths)
+	var victim *task.Task
+	var victimPath string
+	for _, candidatePath := range paths {
+		data, err := os.ReadFile(resolvePath(projectDir, candidatePath))
+		if err != nil {
+			return nil, "", err
+		}
+		candidate, err := task.ParseBytes(data)
+		if err != nil {
+			return nil, "", err
+		}
+		candidate.File = candidatePath
+		if candidate.ID != oldID {
+			continue
+		}
+		if victim == nil ||
+			candidate.Created.After(victim.Created) ||
+			(candidate.Created.Equal(victim.Created) && candidatePath > victimPath) {
+			victim = candidate
+			victimPath = candidatePath
+		}
+	}
+	if victim == nil {
+		t, err := idx.Get(oldID)
+		if err != nil {
+			return nil, "", err
+		}
+		return t, t.File, nil
+	}
+	return victim, victimPath, nil
+}
+
+func duplicatePaths(idx *index.Index, id string) []string {
+	var paths []string
+	for _, warning := range idx.Warnings() {
+		if warning.Kind != "duplicate_id" || !strings.Contains(warning.Message, fmt.Sprintf("%q", id)) {
+			continue
+		}
+		paths = append(paths, warning.Paths...)
+	}
+	return compactSorted(paths)
 }
 
 func FixSafe(projectDir string, idx *index.Index, sch *schema.Schema, report Report) ([]Change, error) {
@@ -480,6 +576,17 @@ func resolvePath(projectDir, path string) string {
 		return path
 	}
 	return filepath.Join(projectDir, filepath.FromSlash(path))
+}
+
+func relativePath(projectDir, filePath string) string {
+	if projectDir == "" {
+		return filepath.ToSlash(filePath)
+	}
+	rel, err := filepath.Rel(projectDir, filePath)
+	if err != nil {
+		return filepath.ToSlash(filePath)
+	}
+	return filepath.ToSlash(rel)
 }
 
 func reassignedPath(path, oldID, newID string) string {

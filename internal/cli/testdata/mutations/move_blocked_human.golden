@@ -4,4 +4,6 @@ stderr:
 error: transition blocked: spec -> impl (Спека утверждена — начинаем реализацию)
   - [field] Спека не утверждена (fields.spec_approved)
     hint: После ревью спеки: sya update <id> --field spec_approved=true
+  - [section_nonempty] $ROOT/.sya/tasks/f00001-feature.md: Секция Design пуста
+    hint: sya edit <id> --section Design
   alternatives: scrapped (setback)
