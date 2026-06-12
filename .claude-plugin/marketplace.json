@@ -1,5 +1,6 @@
 {
   "name": "sya",
+  "description": "Marketplace for sya — git-native issue tracker for AI-agent workflows.",
   "owner": {
     "name": "snjax"
   },
