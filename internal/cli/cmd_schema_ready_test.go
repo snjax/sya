@@ -66,6 +66,28 @@ types:
 		}
 	})
 
+	t.Run("human violations are listed", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		initProject(t, root)
+		writeSchemaFile(t, root, `
+schema_version: 1
+defaults: {type: task}
+types:
+  task:
+    pipeline: [todo, done]
+    transitions:
+      todo -> done: {}
+`)
+		stdout, stderr, code := runCLI(t, root, nil, nil, []string{"schema", "validate"})
+		if code != syaerr.ExitSchemaInvalid || stdout != "" {
+			t.Fatalf("stdout=%q stderr=%q code=%d", stdout, stderr, code)
+		}
+		if !strings.Contains(stderr, "schema invalid") || !strings.Contains(stderr, "[terminal_required]") {
+			t.Fatalf("stderr = %q, want schema violation details", stderr)
+		}
+	})
+
 	t.Run("warnings exit 0", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

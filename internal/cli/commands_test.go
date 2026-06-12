@@ -246,7 +246,7 @@ func TestCreateFlagsAndErrors(t *testing.T) {
 		createSeedTask(t, root, "abc111", "One")
 		createSeedTask(t, root, "abc222", "Two")
 		_, stderr, code := runCLI(t, root, []string{"x00001"}, nil, []string{"create", "Ambiguous", "--depends-on", "abc"})
-		if code != syaerr.ExitLookup || !strings.Contains(stderr, "ambiguous prefix") {
+		if code != syaerr.ExitLookup || !strings.Contains(stderr, "ambiguous prefix") || !strings.Contains(stderr, "abc111 (One, todo)") {
 			t.Fatalf("stderr=%q code=%d", stderr, code)
 		}
 	})

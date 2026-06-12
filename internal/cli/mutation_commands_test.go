@@ -27,12 +27,25 @@ func TestMutationCommandGoldens(t *testing.T) {
 			mustRun(t, root, nil, []string{"move", "f00001", "spec"})
 			return runCLI(t, root, nil, nil, []string{"--json", "move", "f00001", "impl"})
 		}},
+		{name: "move_blocked_human", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+			mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+			return runCLI(t, root, nil, nil, []string{"move", "f00001", "impl"})
+		}},
 		{name: "move_offending_json", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
 			createSeedTask(t, root, "a00001", "Blocked")
 			createSeedTask(t, root, "b00001", "Dependency")
 			mustRun(t, root, nil, []string{"link", "a00001", "depends_on", "b00001"})
 			return runCLI(t, root, nil, nil, []string{"--json", "move", "a00001", "in_progress"})
+		}},
+		{name: "move_offending_human", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "a00001", "Blocked")
+			createSeedTask(t, root, "b00001", "Dependency")
+			mustRun(t, root, nil, []string{"link", "a00001", "depends_on", "b00001"})
+			return runCLI(t, root, nil, nil, []string{"move", "a00001", "in_progress"})
 		}},
 		{name: "move_human", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
@@ -44,10 +57,22 @@ func TestMutationCommandGoldens(t *testing.T) {
 			createSeedTask(t, root, "b00001", "Bug", "-t", "bug")
 			return runCLI(t, root, nil, nil, []string{"--json", "update", "b00001", "--priority", "critical", "--assignee", "codex", "--field", "severity=critical"})
 		}},
+		{name: "update_rel_json", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "a00001", "A")
+			createSeedTask(t, root, "b00001", "B")
+			return runCLI(t, root, nil, nil, []string{"--json", "update", "b00001", "--rel", "blocks=a00001"})
+		}},
 		{name: "update_human", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
 			createSeedTask(t, root, "b00001", "Bug", "-t", "bug")
 			return runCLI(t, root, nil, nil, []string{"update", "b00001", "--priority", "critical", "--assignee", "codex", "--field", "severity=critical"})
+		}},
+		{name: "update_rel_human", run: func(t *testing.T, root string) (string, string, int) {
+			initProject(t, root)
+			createSeedTask(t, root, "a00001", "A")
+			createSeedTask(t, root, "b00001", "B")
+			return runCLI(t, root, nil, nil, []string{"update", "b00001", "--rel", "blocks=a00001"})
 		}},
 		{name: "edit_json", run: func(t *testing.T, root string) (string, string, int) {
 			initProject(t, root)
@@ -175,6 +200,17 @@ func TestMutationErrorPaths(t *testing.T) {
 			wantText: "transition_blocked",
 		},
 		{
+			name: "move guard violation human has details",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "f00001", "Feature", "-t", "feature")
+				mustRun(t, root, nil, []string{"move", "f00001", "spec"})
+			},
+			args:     []string{"move", "f00001", "impl"},
+			wantCode: syaerr.ExitTransitionRejected,
+			wantText: "hint: После ревью спеки",
+		},
+		{
 			name: "move unknown status human lists allowed",
 			setup: func(t *testing.T, root string) {
 				initProject(t, root)
@@ -182,7 +218,7 @@ func TestMutationErrorPaths(t *testing.T) {
 			},
 			args:     []string{"move", "f00001", "working"},
 			wantCode: syaerr.ExitTransitionRejected,
-			wantText: `unknown or unreachable status "working" for feature; allowed from draft: spec, scrapped!`,
+			wantText: `allowed: spec (advance - Требования созрели`,
 		},
 		{
 			name: "move unknown status json allowed targets",
@@ -248,6 +284,27 @@ func TestMutationErrorPaths(t *testing.T) {
 			wantText: "cannot claim: working statuses for feature are impl, review; no transition from draft; advance first: sya move f00001 spec",
 		},
 		{
+			name: "update rel unknown relation",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "a00001", "A")
+				createSeedTask(t, root, "b00001", "B")
+			},
+			args:     []string{"update", "a00001", "--rel", "ghost=b00001"},
+			wantCode: syaerr.ExitUsage,
+			wantText: "unknown relation: ghost",
+		},
+		{
+			name: "update rel bad target",
+			setup: func(t *testing.T, root string) {
+				initProject(t, root)
+				createSeedTask(t, root, "a00001", "A")
+			},
+			args:     []string{"update", "a00001", "--rel", "depends_on=missing"},
+			wantCode: syaerr.ExitLookup,
+			wantText: "not found: missing",
+		},
+		{
 			name: "undeclared field",
 			setup: func(t *testing.T, root string) {
 				initProject(t, root)
@@ -296,6 +353,26 @@ func TestMutationErrorPaths(t *testing.T) {
 				t.Fatalf("output does not contain %q\nstdout=%q\nstderr=%q", tt.wantText, stdout, stderr)
 			}
 		})
+	}
+}
+
+func TestUpdateRelCanonicalizesLikeLink(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	initProject(t, root)
+	createSeedTask(t, root, "a00001", "A")
+	createSeedTask(t, root, "b00001", "B")
+	stdout, stderr, code := runCLI(t, root, nil, nil, []string{"update", "b00001", "--rel", "blocks=a00001"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("update --rel stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	stdout, stderr, code = runCLI(t, root, nil, nil, []string{"show", "a00001"})
+	if code != syaerr.ExitOK || stderr != "" {
+		t.Fatalf("show stdout=%q stderr=%q code=%d", stdout, stderr, code)
+	}
+	if !strings.Contains(stdout, "depends_on: b00001") {
+		t.Fatalf("canonical relation missing from source task:\n%s", stdout)
 	}
 }
 

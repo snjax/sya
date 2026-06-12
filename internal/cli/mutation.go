@@ -316,9 +316,25 @@ func relationTypeCheck(sch *schema.Schema, idx *index.Index, from, relation, to 
 }
 
 func wouldCreateCycle(idx *index.Index, from, relation, to string) bool {
+	return wouldCreateCycleWithPending(idx, nil, from, relation, to)
+}
+
+type canonicalRelationEdge struct {
+	From     string
+	Relation string
+	To       string
+}
+
+func wouldCreateCycleWithPending(idx *index.Index, pending []canonicalRelationEdge, from, relation, to string) bool {
 	origins := idx.CanonicalOrigins()
 	graph := make(map[string][]string)
 	for edge := range origins {
+		if edge.Relation != relation {
+			continue
+		}
+		graph[edge.From] = append(graph[edge.From], edge.To)
+	}
+	for _, edge := range pending {
 		if edge.Relation != relation {
 			continue
 		}

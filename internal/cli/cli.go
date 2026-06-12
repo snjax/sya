@@ -194,7 +194,7 @@ func (a *App) EmitError(err error) int {
 	if a.json {
 		_ = writeJSON(a.out, syaerr.Failure(err))
 	} else if !a.quiet {
-		fmt.Fprintln(a.err, a.colorize.Red("error:")+" "+syaerr.ErrorMessage(err))
+		fmt.Fprintln(a.err, humanErrorText(err, a.colorize))
 	}
 	return syaerr.ExitCode(err)
 }

@@ -132,6 +132,12 @@ func TestFunctionalGoldens(t *testing.T) {
 			id := createJSON(t, root, "Draft Feature", "-t", "feature")
 			return runSya(t, root, nil, "claim", id)
 		}},
+		{"human_transition_blocked_details", func(t *testing.T, root string) runResult {
+			mustOK(t, runSya(t, root, nil, "init"))
+			id := createJSON(t, root, "Blocked Feature", "-t", "feature")
+			mustOK(t, runSya(t, root, nil, "move", id, "spec"))
+			return runSya(t, root, nil, "move", id, "impl")
+		}},
 	}
 
 	for _, tt := range tests {

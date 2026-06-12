@@ -1,0 +1,5 @@
+code: 3
+stdout:
+stderr:
+error: transition blocked: todo -> in_progress
+  - [blocking_relation depends_on] blocking relation "depends_on" has non-terminal targets: b00001 (Dependency, todo)

@@ -1,0 +1,4 @@
+code: 0
+stdout:
+{"ok":true,"data":{"id":"b00001","file":".sya/tasks/b00001-b.md","status":"todo","ok":true}}
+stderr:
